@@ -36,6 +36,20 @@ logger.addHandler(console_handler)
 
 # Helper functions:
 def _parse_record(line: str) -> dict:  # TODO: Add docstring
+    """
+    Parses a single line of text into a dictionary by splitting key-value pairs.
+
+    The function splits the input string using the '|' separator and then divides
+    each segment into a key and a value at the first occurrence of a colon.
+    The 'ID' field is explicitly skipped as per requirements.
+
+    Args:
+        line (str): A raw string from the text file (expected format: key:value|key:value).
+
+    Returns:
+        dict: A dictionary of parsed data with keys and values stripped of
+              leading/trailing whitespace.
+    """
     parts = line.strip().split("|")
     record = {}
 
@@ -53,8 +67,26 @@ def _parse_record(line: str) -> dict:  # TODO: Add docstring
 
 # Main processing function:
 def process_data() -> None:  # TODO: Add docstring
+    """
+    Main orchestration function to merge sub-datasets into a single processed file.
+
+    This function iterates through model-specific subdirectories in the raw data
+    folder, parses all available text files, and appends the directory name
+    as the 'Model_Source'. The final aggregated data is exported to both
+    Parquet and CSV formats.
+
+    Workflow:
+        1. Verifies if the raw data directory exists.
+        2. Iterates through each model's subdirectory.
+        3. Parses every non-empty line within the found .txt files.
+        4. Aggregates the records into a pandas DataFrame.
+        5. Ensures the output directory exists and saves the merged files.
+
+    Returns:
+        None
+    """
     logger.info("Starting data processing...")
-    
+
     all_data = []
 
     if not RAW_DATA_DIR.exists():
