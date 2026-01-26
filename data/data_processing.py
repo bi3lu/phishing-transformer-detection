@@ -1,12 +1,13 @@
 import logging
 from pathlib import Path
+from datetime import datetime
 
 import colorlog  # type: ignore
 import pandas as pd  # type: ignore
 
 BASE_DATA_DIR = Path(__file__).resolve().parent
 RAW_DATA_DIR = BASE_DATA_DIR / "raw"
-MERGED_DATA_DIR = BASE_DATA_DIR / "merged"
+PROCESSED_DATA_DIR = BASE_DATA_DIR / "processed"
 
 # Setup logging:
 logger = logging.getLogger(__name__)
@@ -35,7 +36,7 @@ logger.addHandler(console_handler)
 
 
 # Helper functions:
-def _parse_record(line: str) -> dict:  # TODO: Add docstring
+def _parse_record(line: str) -> dict:
     """
     Parses a single line of text into a dictionary by splitting key-value pairs.
 
@@ -65,22 +66,48 @@ def _parse_record(line: str) -> dict:  # TODO: Add docstring
     return record
 
 
+def _sanitize_sender(sender: str, sedner_to_mask: str = "inny") -> str: # TODO: Add docstring
+    if not sender or sender.lower() == sedner_to_mask:
+        return "<MASK>"
+
+    return sender
+
+
+def _build_text_field(record: dict) -> str:  # TODO: Add docstring
+    parts = []
+
+    if "Type" in record:
+        parts.append(f"[TYPE] {record['Type']}")
+
+    if "Sender_brand" in record:
+        sender = _sanitize_sender(record.get("Sender_brand", "").strip())
+        parts.append(f"[SENDER] {sender}")
+
+    if "Title" in record:
+        parts.append(f"[TITLE] {record['Title']}")
+
+    if "Content" in record:
+        parts.append(f"[CONTENT] {record['Content']}")
+
+    return "\n".join(parts)
+
+
 # Main processing function:
-def process_data() -> None:  # TODO: Add docstring
+def process_data() -> None:
     """
     Main orchestration function to merge sub-datasets into a single processed file.
 
     This function iterates through model-specific subdirectories in the raw data
     folder, parses all available text files, and appends the directory name
     as the 'Model_Source'. The final aggregated data is exported to both
-    Parquet and CSV formats.
+    Parquet and CSV formats with timestamp.
 
     Workflow:
         1. Verifies if the raw data directory exists.
         2. Iterates through each model's subdirectory.
         3. Parses every non-empty line within the found .txt files.
         4. Aggregates the records into a pandas DataFrame.
-        5. Ensures the output directory exists and saves the merged files.
+        5. Ensures the output directory exists and saves the processed files with timestamp.
 
     Returns:
         None
@@ -103,6 +130,7 @@ def process_data() -> None:  # TODO: Add docstring
                         if line.strip():
                             record = _parse_record(line)
                             record["Model_Source"] = model_dir.name
+                            record["Text"] = _build_text_field(record)
                             all_data.append(record)
 
     if not all_data:
@@ -111,17 +139,20 @@ def process_data() -> None:  # TODO: Add docstring
 
     df = pd.DataFrame(all_data)
 
-    MERGED_DATA_DIR.mkdir(parents=True, exist_ok=True)
+    PROCESSED_DATA_DIR.mkdir(parents=True, exist_ok=True)
+    
+    # Get current timestamp:
+    timestamp = datetime.now().strftime("%Y%m%d_%H%M%S")
 
     # Save to .parquet:
-    output_path_parquet = MERGED_DATA_DIR / "merged_raw_data.parquet"
+    output_path_parquet = PROCESSED_DATA_DIR / f"processed_data_{timestamp}.parquet"
     df.to_parquet(output_path_parquet, index=False)
 
     # Save to .csv:
-    output_path_csv = MERGED_DATA_DIR / "merged_raw_data.csv"
+    output_path_csv = PROCESSED_DATA_DIR / f"processed_data_{timestamp}.csv"
     df.to_csv(output_path_csv, index=False)
 
-    logger.info(f"Data processing complete. Files saved to {MERGED_DATA_DIR}")
+    logger.info(f"Data processing complete. Files saved to {PROCESSED_DATA_DIR}")
 
 
 # Entry point:
