@@ -66,8 +66,8 @@ def _parse_record(line: str) -> dict:
     return record
 
 
-def _sanitize_sender(sender: str, sedner_to_mask: str = "inny") -> str: # TODO: Add docstring
-    if not sender or sender.lower() == sedner_to_mask:
+def _sanitize_sender(sender: str, sender_to_mask: str = "inny") -> str: # TODO: Add docstring
+    if not sender or sender.lower() == sender_to_mask:
         return "<MASK>"
 
     return sender
