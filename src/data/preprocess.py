@@ -5,9 +5,9 @@ from datetime import datetime
 import colorlog  # type: ignore
 import pandas as pd  # type: ignore
 
-BASE_DATA_DIR = Path(__file__).resolve().parent
-RAW_DATA_DIR = BASE_DATA_DIR / "raw"
-PROCESSED_DATA_DIR = BASE_DATA_DIR / "processed"
+BASE_DATA_DIR = Path(__file__).resolve().parents[2]
+RAW_DATA_DIR = BASE_DATA_DIR / "data" /"raw"
+PROCESSED_DATA_DIR = BASE_DATA_DIR / "data" / "processed"
 
 # Setup logging:
 logger = logging.getLogger(__name__)
@@ -93,7 +93,7 @@ def _build_text_field(record: dict) -> str:  # TODO: Add docstring
 
 
 # Main processing function:
-def process_data() -> None:
+def preprocess_data() -> None:
     """
     Main orchestration function to merge sub-datasets into a single processed file.
 
@@ -157,4 +157,4 @@ def process_data() -> None:
 
 # Entry point:
 if __name__ == "__main__":
-    process_data()
+    preprocess_data()
