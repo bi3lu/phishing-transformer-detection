@@ -1,12 +1,13 @@
 import logging
-from pathlib import Path
 from datetime import datetime
+from pathlib import Path
 
 import colorlog  # type: ignore
 import pandas as pd  # type: ignore
 
+# Paths:
 BASE_DATA_DIR = Path(__file__).resolve().parents[2]
-RAW_DATA_DIR = BASE_DATA_DIR / "data" /"raw"
+RAW_DATA_DIR = BASE_DATA_DIR / "data" / "raw"
 PROCESSED_DATA_DIR = BASE_DATA_DIR / "data" / "processed"
 
 # Setup logging:
@@ -66,7 +67,9 @@ def _parse_record(line: str) -> dict:
     return record
 
 
-def _sanitize_sender(sender: str, sender_to_mask: str = "inny") -> str: # TODO: Add docstring
+def _sanitize_sender(
+    sender: str, sender_to_mask: str = "inny"
+) -> str:  # TODO: Add docstring
     if not sender or sender.lower() == sender_to_mask:
         return "<MASK>"
 
@@ -140,7 +143,7 @@ def preprocess_data() -> None:
     df = pd.DataFrame(all_data)
 
     PROCESSED_DATA_DIR.mkdir(parents=True, exist_ok=True)
-    
+
     # Get current timestamp:
     timestamp = datetime.now().strftime("%Y%m%d_%H%M%S")
 
