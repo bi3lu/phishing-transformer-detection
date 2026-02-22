@@ -1,14 +1,17 @@
 import argparse
-import logging
-from pathlib import Path
 from typing import Tuple
 
 import mlflow  # type: ignore
 import numpy as np  # type: ignore
 import pandas as pd  # type: ignore
 from sklearn.metrics import classification_report  # type: ignore
-from sklearn.metrics import (confusion_matrix, f1_score, precision_score,
-                             recall_score, roc_auc_score)
+from sklearn.metrics import (
+    confusion_matrix,
+    f1_score,
+    precision_score,
+    recall_score,
+    roc_auc_score,
+)
 from sklearn.pipeline import Pipeline  # type: ignore
 
 from src.config import LABEL_COL, SPLIT_DATA_DIR, TEXT_COL
@@ -19,7 +22,21 @@ logger = get_logger(__name__)
 
 
 # Helper functions:
-def _load_test_data() -> Tuple[pd.Series, pd.Series]:  # TODO: Add docstring
+def _load_test_data() -> Tuple[pd.Series, pd.Series]:
+    """Load test dataset and return features and labels.
+
+    Reads the ``test.csv`` file from ``SPLIT_DATA_DIR``, extracts the
+    configured text column as input features and the label column as
+    integer targets.
+
+    Returns:
+        A tuple (X, y), where:
+            - X: pandas Series containing text inputs (strings).
+            - y: pandas Series containing integer labels.
+
+    Raises:
+        FileNotFoundError: If the test split file does not exist.
+    """
     path = SPLIT_DATA_DIR / "test.csv"
 
     if not path.exists():
@@ -33,20 +50,50 @@ def _load_test_data() -> Tuple[pd.Series, pd.Series]:  # TODO: Add docstring
     return (X, y)
 
 
-def load_model(model_uri: str) -> Pipeline:  # TODO: Add docstring
+def load_model(model_uri: str) -> Pipeline:
+    """Load a trained scikit-learn pipeline from MLflow.
+
+    Args:
+        model_uri: MLflow model URI pointing to a logged model artifact
+            (e.g., ``runs:/<run_id>/model`` or a registry URI).
+
+    Returns:
+        A scikit-learn Pipeline object loaded from MLflow.
+    """
     logger.info(f"Loading model from: {model_uri}")
 
     return mlflow.sklearn.load_model(model_uri)
 
 
-def apply_threshold(
-    probs: np.ndarray, threshold: float
-) -> np.ndarray:  # TODO: Add docstring
+def apply_threshold(probs: np.ndarray, threshold: float) -> np.ndarray:
+    """Convert probabilities to binary predictions using a threshold.
+
+    Args:
+        probs: Array of predicted probabilities for the positive class.
+        threshold: Decision threshold in the range [0, 1]. Values greater
+            than or equal to this threshold are mapped to class 1.
+
+    Returns:
+        A NumPy array of integer predictions (0 or 1).
+    """
     return (probs >= threshold).astype(int)
 
 
 # Main:
 def main(model_uri: str, threshold: float) -> None:
+    """Evaluate a trained model on the test dataset.
+
+    The function loads the test data and a trained model from MLflow,
+    computes predicted probabilities, applies a classification threshold,
+    and reports standard binary classification metrics including
+    precision, recall, F1-score, ROC-AUC, confusion matrix, and a
+    detailed classification report.
+
+    Args:
+        model_uri: MLflow model URI identifying the model to evaluate.
+        threshold: Classification threshold used to convert probabilities
+            into binary predictions.
+    """
     logger.info("Starting evaluation")
 
     X_test, y_test = _load_test_data()

@@ -1,6 +1,4 @@
-import logging
 from datetime import datetime
-from pathlib import Path
 
 import pandas as pd  # type: ignore
 
@@ -14,18 +12,18 @@ logger = get_logger(__name__)
 # Helper functions:
 def _parse_record(line: str) -> dict:
     """
-    Parses a single line of text into a dictionary by splitting key-value pairs.
+    Parse a single raw text line into a dictionary of key-value pairs.
 
-    The function splits the input string using the '|' separator and then divides
-    each segment into a key and a value at the first occurrence of a colon.
-    The 'ID' field is explicitly skipped as per requirements.
+    The input line is expected to contain fields separated by the '|'
+    character, where each field has the format "key:value". Splitting
+    occurs on the first colon only. The "ID" field is ignored.
 
     Args:
-        line (str): A raw string from the text file (expected format: key:value|key:value).
+        line: A raw string from the text file (e.g., "key:value|key:value").
 
     Returns:
-        dict: A dictionary of parsed data with keys and values stripped of
-              leading/trailing whitespace.
+        A dictionary containing parsed keys and values with surrounding
+        whitespace removed.
     """
     parts = line.strip().split("|")
     record = {}
@@ -42,16 +40,45 @@ def _parse_record(line: str) -> dict:
     return record
 
 
-def _sanitize_sender(
-    sender: str, sender_to_mask: str = "inny"
-) -> str:  # TODO: Add docstring
+def _sanitize_sender(sender: str, sender_to_mask: str = "inny") -> str:
+    """Normalize and optionally mask the sender value.
+
+    If the sender is empty, missing, or matches the specified masking
+    value (case-insensitive), a placeholder token is returned.
+
+    Args:
+        sender: Raw sender name extracted from the record.
+        sender_to_mask: Sender value that should be replaced with a mask
+            (default: "inny").
+
+    Returns:
+        A sanitized sender string or the "<MASK>" placeholder.
+    """
     if not sender or sender.lower() == sender_to_mask:
         return "<MASK>"
 
     return sender
 
 
-def _build_text_field(record: dict) -> str:  # TODO: Add docstring
+def _build_text_field(record: dict) -> str:
+    """Construct a structured text representation from a parsed record.
+
+    The function assembles selected fields into a single multi-line text
+    block with explicit tags, suitable for downstream NLP processing.
+
+    Included fields (if present):
+        - Type → "[TYPE]"
+        - Sender_brand → "[SENDER]" (sanitized)
+        - Title → "[TITLE]"
+        - Content → "[CONTENT]"
+
+    Args:
+        record: Dictionary containing parsed record fields.
+
+    Returns:
+        A formatted string combining available fields separated by
+        newline characters.
+    """
     parts = []
 
     if "Type" in record:
@@ -73,19 +100,21 @@ def _build_text_field(record: dict) -> str:  # TODO: Add docstring
 # Main processing function:
 def preprocess_data() -> None:
     """
-    Main orchestration function to merge sub-datasets into a single processed file.
+    Aggregate raw text datasets into a single processed dataset.
 
-    This function iterates through model-specific subdirectories in the raw data
-    folder, parses all available text files, and appends the directory name
-    as the 'Model_Source'. The final aggregated data is exported to both
-    Parquet and CSV formats with timestamp.
+    This function scans model-specific subdirectories within the raw
+    data directory, parses all .txt files, converts each non-empty line
+    into a structured record, and appends metadata indicating the source
+    model directory. A consolidated DataFrame is then saved in both
+    Parquet and CSV formats with a timestamped filename.
 
     Workflow:
-        1. Verifies if the raw data directory exists.
-        2. Iterates through each model's subdirectory.
-        3. Parses every non-empty line within the found .txt files.
-        4. Aggregates the records into a pandas DataFrame.
-        5. Ensures the output directory exists and saves the processed files with timestamp.
+        1. Validate existence of the raw data directory.
+        2. Iterate through each subdirectory representing a model source.
+        3. Parse each non-empty line from .txt files into records.
+        4. Build a structured text field for NLP usage.
+        5. Aggregate all records into a DataFrame.
+        6. Save outputs to the processed data directory.
 
     Returns:
         None
