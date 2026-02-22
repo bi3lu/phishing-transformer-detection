@@ -3,52 +3,19 @@ import logging
 from pathlib import Path
 from typing import Tuple
 
-import colorlog  # type: ignore
 import mlflow  # type: ignore
 import numpy as np  # type: ignore
 import pandas as pd  # type: ignore
-from sklearn.metrics import (  # type: ignore
-    classification_report,
-    confusion_matrix,
-    f1_score,
-    precision_score,
-    recall_score,
-    roc_auc_score,
-)
+from sklearn.metrics import classification_report  # type: ignore
+from sklearn.metrics import (confusion_matrix, f1_score, precision_score,
+                             recall_score, roc_auc_score)
 from sklearn.pipeline import Pipeline  # type: ignore
 
-# Paths:
-BASE_DATA_DIR = Path(__file__).resolve().parents[2]
-SPLIT_DATA_DIR = BASE_DATA_DIR / "data" / "split"
+from src.config import LABEL_COL, SPLIT_DATA_DIR, TEXT_COL
+from src.utils.logger import get_logger
 
 # Setup logging:
-logger = logging.getLogger(__name__)
-
-if logger.hasHandlers():
-    logger.handlers.clear()
-
-logger.setLevel(logging.DEBUG)
-
-log_format = colorlog.ColoredFormatter(
-    "%(log_color)s%(asctime)s | %(levelname)-8s | %(message)s%(reset)s",
-    datefmt="%H:%M:%S",
-    log_colors={
-        "DEBUG": "cyan",
-        "INFO": "green",
-        "WARNING": "yellow",
-        "ERROR": "red",
-        "CRITICAL": "bold_red",
-    },
-)
-
-console_handler = logging.StreamHandler()
-console_handler.setFormatter(log_format)
-
-logger.addHandler(console_handler)
-
-# Constants:
-LABEL_COL = "Is_Phishing"
-TEXT_COL = "Text"
+logger = get_logger(__name__)
 
 
 # Helper functions:
@@ -109,10 +76,9 @@ def main(model_uri: str, threshold: float) -> None:
 
 # Entry point:
 if __name__ == "__main__":
-    parser = argparse.ArgumentParser()
-
+    parser = argparse.ArgumentParser(description="Evaluate a trained model.")
     parser.add_argument(
-        "--model-uri",
+        "--model_uri",
         type=str,
         required=True,
         help="MLflow model URI, e.g. runs:/<run_id>/model",
@@ -121,9 +87,9 @@ if __name__ == "__main__":
         "--threshold",
         type=float,
         default=0.5,
-        help="Decision threshold for positive class",
+        help="Classification threshold (default: 0.5).",
     )
 
     args = parser.parse_args()
 
-    main(args.model_uri, args.threshold)
+    main(model_uri=args.model_uri, threshold=args.threshold)

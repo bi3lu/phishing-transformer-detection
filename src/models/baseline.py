@@ -2,53 +2,20 @@ import logging
 from pathlib import Path
 from typing import Tuple
 
-import colorlog  # type: ignore
 import mlflow  # type: ignore
 import pandas as pd  # type: ignore
 from sklearn.feature_extraction.text import TfidfVectorizer  # type: ignore
 from sklearn.linear_model import LogisticRegression  # type: ignore
-from sklearn.metrics import (  # type: ignore
-    classification_report,
-    f1_score,
-    precision_score,
-    recall_score,
-    roc_auc_score,
-)
+from sklearn.metrics import f1_score  # type: ignore
+from sklearn.metrics import (classification_report, precision_score,
+                             recall_score, roc_auc_score)
 from sklearn.pipeline import Pipeline  # type: ignore
 
-# Paths:
-BASE_DATA_DIR = Path(__file__).resolve().parents[2]
-SPLIT_DATA_DIR = BASE_DATA_DIR / "data" / "split"
+from src.config import LABEL_COL, RANDOM_STATE, SPLIT_DATA_DIR, TEXT_COL
+from src.utils.logger import get_logger
 
 # Setup logging:
-logger = logging.getLogger(__name__)
-
-if logger.hasHandlers():
-    logger.handlers.clear()
-
-logger.setLevel(logging.DEBUG)
-
-log_format = colorlog.ColoredFormatter(
-    "%(log_color)s%(asctime)s | %(levelname)-8s | %(message)s%(reset)s",
-    datefmt="%H:%M:%S",
-    log_colors={
-        "DEBUG": "cyan",
-        "INFO": "green",
-        "WARNING": "yellow",
-        "ERROR": "red",
-        "CRITICAL": "bold_red",
-    },
-)
-
-console_handler = logging.StreamHandler()
-console_handler.setFormatter(log_format)
-
-logger.addHandler(console_handler)
-
-# Constants:
-LABEL_COL = "Is_Phishing"
-TEXT_COL = "Text"
-RANDOM_STATE = 42
+logger = get_logger(__name__)
 
 
 # Helper functions:

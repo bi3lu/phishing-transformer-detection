@@ -2,38 +2,13 @@ import logging
 from datetime import datetime
 from pathlib import Path
 
-import colorlog  # type: ignore
 import pandas as pd  # type: ignore
 
-# Paths:
-BASE_DATA_DIR = Path(__file__).resolve().parents[2]
-RAW_DATA_DIR = BASE_DATA_DIR / "data" / "raw"
-PROCESSED_DATA_DIR = BASE_DATA_DIR / "data" / "processed"
+from src.config import PROCESSED_DATA_DIR, RAW_DATA_DIR
+from src.utils.logger import get_logger
 
 # Setup logging:
-logger = logging.getLogger(__name__)
-
-if logger.hasHandlers():
-    logger.handlers.clear()
-
-logger.setLevel(logging.DEBUG)
-
-log_format = colorlog.ColoredFormatter(
-    "%(log_color)s%(asctime)s | %(levelname)-8s | %(message)s%(reset)s",
-    datefmt="%H:%M:%S",
-    log_colors={
-        "DEBUG": "cyan",
-        "INFO": "green",
-        "WARNING": "yellow",
-        "ERROR": "red",
-        "CRITICAL": "bold_red",
-    },
-)
-
-console_handler = logging.StreamHandler()
-console_handler.setFormatter(log_format)
-
-logger.addHandler(console_handler)
+logger = get_logger(__name__)
 
 
 # Helper functions:

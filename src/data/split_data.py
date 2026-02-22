@@ -2,44 +2,15 @@ import logging
 from pathlib import Path
 from typing import Tuple
 
-import colorlog  # type: ignore
 import pandas as pd  # type: ignore
 from sklearn.model_selection import train_test_split  # type: ignore
 
-# Paths:
-BASE_DATA_DIR = Path(__file__).resolve().parents[2]
-PROCESSED_DATA_DIR = BASE_DATA_DIR / "data" / "processed"
-SPLIT_DATA_DIR = BASE_DATA_DIR / "data" / "split"
+from src.config import (LABEL_COL, PROCESSED_DATA_DIR, RANDOM_STATE,
+                        SPLIT_DATA_DIR, TEXT_COL)
+from src.utils.logger import get_logger
 
 # Setup logging:
-logger = logging.getLogger(__name__)
-
-if logger.hasHandlers():
-    logger.handlers.clear()
-
-logger.setLevel(logging.DEBUG)
-
-log_format = colorlog.ColoredFormatter(
-    "%(log_color)s%(asctime)s | %(levelname)-8s | %(message)s%(reset)s",
-    datefmt="%H:%M:%S",
-    log_colors={
-        "DEBUG": "cyan",
-        "INFO": "green",
-        "WARNING": "yellow",
-        "ERROR": "red",
-        "CRITICAL": "bold_red",
-    },
-)
-
-console_handler = logging.StreamHandler()
-console_handler.setFormatter(log_format)
-
-logger.addHandler(console_handler)
-
-# Constants:
-LABEL_COL = "Is_Phishing"
-TEXT_COL = "Text"
-RANDOM_STATE = 42
+logger = get_logger(__name__)
 
 
 # Helper functions:
