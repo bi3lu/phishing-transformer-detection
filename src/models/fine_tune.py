@@ -1,12 +1,16 @@
 import os
 from dataclasses import dataclass
 
+import mlflow  # type: ignore
 import pandas as pd  # type: ignore
 import torch  # type: ignore
 from datasets import Dataset, DatasetDict  # type: ignore
-from sklearn.metrics import accuracy_score, precision_recall_fscore_support  # type: ignore
-from transformers import (  # type: ignore
-    AutoModelForSequenceClassification,
+from sklearn.metrics import (
+    accuracy_score,  # type: ignore
+    precision_recall_fscore_support,
+)
+from transformers import (
+    AutoModelForSequenceClassification,  # type: ignore
     AutoTokenizer,
     DataCollatorWithPadding,
     Trainer,
@@ -70,6 +74,20 @@ def compute_metrics(pred):  # TODO: Add docstring
 
 
 def main():  # TODO: Add docstring
+    mlflow.set_experiment("phishing_transformer_finetune")
+    mlflow.start_run()
+
+    # Log parameters
+    mlflow.log_params(
+        {
+            "model_name": ModelConfig.MODEL_NAME,
+            "max_length": ModelConfig.MAX_LENGTH,
+            "batch_size": ModelConfig.BATCH_SIZE,
+            "epochs": ModelConfig.EPOCHS,
+            "learning_rate": ModelConfig.LEARNING_RATE,
+        }
+    )
+
     logger.info("Loading data...")
     dataset = load_data()
 
@@ -119,6 +137,7 @@ def main():  # TODO: Add docstring
         metric_for_best_model="f1",
         logging_steps=10,
         logging_dir="./logs",
+        report_to="mlflow",
     )
 
     trainer = Trainer(
@@ -134,8 +153,11 @@ def main():  # TODO: Add docstring
     trainer.train()
 
     logger.info("Evaluating on test set...")
-    test_results = trainer.evaluate(tokenized_datasets["test"])
+    test_results = trainer.evaluate(
+        tokenized_datasets["test"], metric_key_prefix="test"
+    )
     logger.info(f"Test results: {test_results}")
+    mlflow.log_metrics(test_results)
 
     model_save_path = "./saved_models/fine_tuned_bert"
 
@@ -145,6 +167,8 @@ def main():  # TODO: Add docstring
     logger.info(f"Saving model to {model_save_path}")
     trainer.save_model(model_save_path)
     tokenizer.save_pretrained(model_save_path)
+
+    mlflow.end_run()
 
 
 if __name__ == "__main__":
