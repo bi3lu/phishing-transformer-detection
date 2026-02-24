@@ -21,7 +21,6 @@ logger = get_logger(__name__)
 
 # Logging metrics:
 def log_metrics(y_true, y_pred, y_probs, prefix: str = "val") -> None:
-    """Calculate and log metrics for a given split."""
     f1 = f1_score(y_true, y_pred)
     precision = precision_score(y_true, y_pred)
     recall = recall_score(y_true, y_pred)
@@ -60,8 +59,9 @@ def main() -> None:
     """
     logger.info("Running baseline TF-IDF + LogisticRegression")
 
-    # Load parameters from yaml config
+    # Load parameters from yaml config:
     params_path = BASE_DIR / "params.yaml"
+
     with open(params_path, "r") as f:
         config = yaml.safe_load(f)
 
