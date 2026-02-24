@@ -3,8 +3,13 @@ from typing import Tuple
 import pandas as pd  # type: ignore
 from sklearn.model_selection import train_test_split  # type: ignore
 
-from src.config import (LABEL_COL, PROCESSED_DATA_DIR, RANDOM_STATE,
-                        SPLIT_DATA_DIR, TEXT_COL)
+from src.config import (
+    LABEL_COL,
+    PROCESSED_DATA_DIR,
+    RANDOM_STATE,
+    SPLIT_DATA_DIR,
+    TEXT_COL,
+)
 from src.utils.logger import get_logger
 
 # Setup logging:
@@ -12,7 +17,7 @@ logger = get_logger(__name__)
 
 
 # Helper functions:
-def _load_latest_processed_file() -> pd.DataFrame:
+def get_latest_split() -> pd.DataFrame:
     """Load the most recent processed dataset file.
 
     The function searches for files matching the pattern
@@ -38,12 +43,11 @@ def _load_latest_processed_file() -> pd.DataFrame:
     return pd.read_csv(latest_file)
 
 
-def _validate_dataframe(df: pd.DataFrame) -> None:
+def validate_dataframe(df: pd.DataFrame) -> None:
     """Validate dataset structure and label integrity.
 
     Ensures that required columns are present and that the label column
-    does not contain missing values. Logs dataset size and normalized
-    class distribution for inspection.
+    does not contain missing values.
 
     Args:
         df: Input DataFrame to validate.
@@ -60,11 +64,11 @@ def _validate_dataframe(df: pd.DataFrame) -> None:
     if df[LABEL_COL].isnull().any():
         raise ValueError("Label column contains NaN values.")
 
-    logger.info(f"Dataset size: {len(df)}")
+    logger.info(f"Dataset validation passed. Size: {len(df)}")
     logger.info(f"Class distribution:\n{df[LABEL_COL].value_counts(normalize=True)}\n")
 
 
-def _split_dataset(
+def split_dataset(
     df: pd.DataFrame,
     train_size: float = 0.7,
     val_size: float = 0.15,
@@ -86,11 +90,12 @@ def _split_dataset(
         dataset splits.
 
     Raises:
-        AssertionError: If the provided split proportions do not sum to 1.0.
+        ValueError: If the provided split proportions do not sum to 1.0.
     """
-    assert (
-        abs(train_size + val_size + test_size - 1.0) < 1e-6
-    )  # NOTE: Checks if train, validate and test sizes are correct
+    if abs(train_size + val_size + test_size - 1.0) > 1e-6:
+        raise ValueError(
+            f"Split proportions must sum to 1.0. Got: {train_size + val_size + test_size}"
+        )
 
     train_df, temp_df = train_test_split(
         df, test_size=(1 - test_size), stratify=df[LABEL_COL], random_state=RANDOM_STATE
@@ -104,6 +109,28 @@ def _split_dataset(
     )
 
     return (train_df, val_df, test_df)
+
+
+def save_splits(
+    train_df: pd.DataFrame, val_df: pd.DataFrame, test_df: pd.DataFrame
+) -> None:
+    """Save dataset splits to CSV files.
+
+    Args:
+        train_df: Training dataset split.
+        val_df: Validation dataset split.
+        test_df: Test dataset split.
+    """
+    SPLIT_DATA_DIR.mkdir(parents=True, exist_ok=True)
+
+    train_df.to_csv(SPLIT_DATA_DIR / "train.csv", index=False)
+    val_df.to_csv(SPLIT_DATA_DIR / "val.csv", index=False)
+    test_df.to_csv(SPLIT_DATA_DIR / "test.csv", index=False)
+
+    logger.info(f"Splits saved to {SPLIT_DATA_DIR}")
+    logger.info(f"Train: \t{len(train_df)}")
+    logger.info(f"Val: \t{len(val_df)}")
+    logger.info(f"Test: \t{len(test_df)}")
 
 
 # Main:
@@ -121,22 +148,16 @@ def main() -> None:
     logger.info("Starting dataset split...")
 
     # Load and check dataset:
-    df = _load_latest_processed_file()
-    _validate_dataframe(df)
+    df = get_latest_split()
+    validate_dataframe(df)
 
     # Split to train, validate and test datasets
-    train_df, val_df, test_df = _split_dataset(df)
+    train_df, val_df, test_df = split_dataset(df)
 
-    SPLIT_DATA_DIR.mkdir(parents=True, exist_ok=True)
+    # Save splits
+    save_splits(train_df, val_df, test_df)
 
-    train_df.to_csv(SPLIT_DATA_DIR / "train.csv", index=False)
-    val_df.to_csv(SPLIT_DATA_DIR / "val.csv", index=False)
-    test_df.to_csv(SPLIT_DATA_DIR / "test.csv", index=False)
-
-    logger.info("Split completed successfully:")
-    logger.info(f"Train: \t{len(train_df)}")
-    logger.info(f"Val: \t{len(val_df)}")
-    logger.info(f"Test: \t{len(test_df)}")
+    logger.info("Split completed successfully.")
 
 
 # Entry point:
