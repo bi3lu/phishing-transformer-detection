@@ -1,4 +1,5 @@
 import mlflow  # type: ignore
+import yaml  # type: ignore
 from sklearn.feature_extraction.text import TfidfVectorizer  # type: ignore
 from sklearn.linear_model import LogisticRegression  # type: ignore
 from sklearn.metrics import f1_score  # type: ignore
@@ -10,12 +11,38 @@ from sklearn.metrics import (
 )
 from sklearn.pipeline import Pipeline  # type: ignore
 
-from src.config import LABEL_COL, RANDOM_STATE, SPLIT_DATA_DIR, TEXT_COL
+from src.config import BASE_DIR, RANDOM_STATE
 from src.data.load_data import load_split, prepare_xy
 from src.utils.logger import get_logger
 
 # Setup logging:
 logger = get_logger(__name__)
+
+
+# Logging metrics:
+def log_metrics(y_true, y_pred, y_probs, prefix: str = "val") -> None:
+    """Calculate and log metrics for a given split."""
+    f1 = f1_score(y_true, y_pred)
+    precision = precision_score(y_true, y_pred)
+    recall = recall_score(y_true, y_pred)
+    auc = roc_auc_score(y_true, y_probs)
+
+    display_name = "Validation" if prefix == "val" else prefix.capitalize()
+
+    logger.info(f"{display_name} results:")
+    logger.info(f"F1: \t{f1:.4f}")
+    logger.info(f"Precision: \t{precision:.4f}")
+    logger.info(f"Recall: \t{recall:.4f}")
+    logger.info(f"ROC-AUC: \t{auc:.4f}")
+
+    mlflow.log_metrics(
+        {
+            f"{prefix}_f1": f1,
+            f"{prefix}_precision": precision,
+            f"{prefix}_recall": recall,
+            f"{prefix}_auc": auc,
+        }
+    )
 
 
 # Main:
@@ -33,6 +60,14 @@ def main() -> None:
     """
     logger.info("Running baseline TF-IDF + LogisticRegression")
 
+    # Load parameters from yaml config
+    params_path = BASE_DIR / "params.yaml"
+    with open(params_path, "r") as f:
+        config = yaml.safe_load(f)
+
+    tfidf_params = config["baseline"]["tfidf"]
+    lr_params = config["baseline"]["logistic_regression"]
+
     train_df = load_split("train")
     val_df = load_split("val")
     test_df = load_split("test")
@@ -46,16 +81,16 @@ def main() -> None:
             (
                 "tfidf",
                 TfidfVectorizer(
-                    ngram_range=(1, 2),
-                    max_features=50_000,
-                    min_df=2,
+                    ngram_range=tuple(tfidf_params["ngram_range"]),
+                    max_features=tfidf_params["max_features"],
+                    min_df=tfidf_params["min_df"],
                 ),
             ),
             (
                 "clf",
                 LogisticRegression(
-                    max_iter=1000,
-                    class_weight="balanced",
+                    max_iter=lr_params["max_iter"],
+                    class_weight=lr_params["class_weight"],
                     random_state=RANDOM_STATE,
                 ),
             ),
@@ -72,33 +107,15 @@ def main() -> None:
         val_preds = pipeline.predict(X_val)
         val_probs = pipeline.predict_proba(X_val)[:, 1]
 
-        val_f1 = f1_score(y_val, val_preds)
-        val_precision = precision_score(y_val, val_preds)
-        val_recall = recall_score(y_val, val_preds)
-        val_auc = roc_auc_score(y_val, val_probs)
-
-        logger.info("Validation results:")
-        logger.info(f"F1: \t{val_f1:.4f}")
-        logger.info(f"Precision: \t{val_precision:.4f}")
-        logger.info(f"Recall: \t{val_recall:.4f}")
-        logger.info(f"ROC-AUC: \t{val_auc:.4f}")
+        log_metrics(y_val, val_preds, val_probs, prefix="val")
 
         mlflow.log_params(
             {
                 "model": "LogisticRegression",
                 "vectorizer": "TF-IDF",
-                "ngram_range": "(1,2)",
-                "max_features": 50_000,
-                "class_weight": "balanced",
-            }
-        )
-
-        mlflow.log_metrics(
-            {
-                "val_f1": val_f1,
-                "val_precision": val_precision,
-                "val_recall": val_recall,
-                "val_auc": val_auc,
+                "ngram_range": str(tuple(tfidf_params["ngram_range"])),
+                "max_features": tfidf_params["max_features"],
+                "class_weight": lr_params["class_weight"],
             }
         )
 
@@ -107,25 +124,7 @@ def main() -> None:
         test_preds = pipeline.predict(X_test)
         test_probs = pipeline.predict_proba(X_test)[:, 1]
 
-        test_f1 = f1_score(y_test, test_preds)
-        test_precision = precision_score(y_test, test_preds)
-        test_recall = recall_score(y_test, test_preds)
-        test_auc = roc_auc_score(y_test, test_probs)
-
-        mlflow.log_metrics(
-            {
-                "test_f1": test_f1,
-                "test_precision": test_precision,
-                "test_recall": test_recall,
-                "test_auc": test_auc,
-            }
-        )
-
-        logger.info("Test results:")
-        logger.info(f"F1: \t{test_f1:.4f}")
-        logger.info(f"Precision: \t{test_precision:.4f}")
-        logger.info(f"Recall: \t{test_recall:.4f}")
-        logger.info(f"ROC-AUC: \t{test_auc:.4f}")
+        log_metrics(y_test, test_preds, test_probs, prefix="test")
 
         logger.info("Classification report (TEST):")
         logger.info("\n" + classification_report(y_test, test_preds))
