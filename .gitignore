@@ -206,7 +206,9 @@ saved_models/
 results/
 
 # Data
-data/
+data/processed/
+data/raw/
+data/split/
 
 # MlFlow
 mlflow.db

@@ -5,12 +5,10 @@ import mlflow  # type: ignore
 import pandas as pd  # type: ignore
 import torch  # type: ignore
 from datasets import Dataset, DatasetDict  # type: ignore
-from sklearn.metrics import (
-    accuracy_score,  # type: ignore
-    precision_recall_fscore_support,
-)
+from sklearn.metrics import accuracy_score  # type: ignore
+from sklearn.metrics import precision_recall_fscore_support
+from transformers import AutoModelForSequenceClassification  # type: ignore
 from transformers import (
-    AutoModelForSequenceClassification,  # type: ignore
     AutoTokenizer,
     DataCollatorWithPadding,
     Trainer,

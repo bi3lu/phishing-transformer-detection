@@ -97,8 +97,8 @@ def _build_text_field(record: dict) -> str:
     return "\n".join(parts)
 
 
-# Main processing function:
-def preprocess_data() -> None:
+# Main:
+def main() -> None:
     """
     Aggregate raw text datasets into a single processed dataset.
 
@@ -164,4 +164,4 @@ def preprocess_data() -> None:
 
 # Entry point:
 if __name__ == "__main__":
-    preprocess_data()
+    main()

@@ -3,8 +3,13 @@ from typing import Tuple
 import pandas as pd  # type: ignore
 from sklearn.model_selection import train_test_split  # type: ignore
 
-from src.config import (LABEL_COL, PROCESSED_DATA_DIR, RANDOM_STATE,
-                        SPLIT_DATA_DIR, TEXT_COL)
+from src.config import (
+    LABEL_COL,
+    PROCESSED_DATA_DIR,
+    RANDOM_STATE,
+    SPLIT_DATA_DIR,
+    TEXT_COL,
+)
 from src.utils.logger import get_logger
 
 # Setup logging:
