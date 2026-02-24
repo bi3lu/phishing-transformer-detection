@@ -1,7 +1,7 @@
 import mlflow  # type: ignore
 import numpy as np  # type: ignore
-from sklearn.metrics import ( # type: ignore
-    classification_report,
+from sklearn.metrics import (
+    classification_report,  # type: ignore
     confusion_matrix,
     f1_score,
     precision_score,
