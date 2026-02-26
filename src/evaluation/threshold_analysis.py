@@ -9,15 +9,15 @@ import numpy as np  # type: ignore
 import pandas as pd  # type: ignore
 import seaborn as sns  # type: ignore
 import torch  # type: ignore
-from sklearn.metrics import ( # type: ignore
+from sklearn.metrics import (  # type: ignore
     confusion_matrix,
     f1_score,
     precision_score,
     recall_score,
 )
 from tqdm import tqdm  # type: ignore
-from transformers import ( # type: ignore
-    AutoModelForSequenceClassification,  
+from transformers import (  # type: ignore
+    AutoModelForSequenceClassification,
     AutoTokenizer,
 )
 
@@ -211,20 +211,25 @@ def main():
     df_test = load_split("test")
     X_test, y_test = prepare_xy(df_test)
 
-    # Models to evaluate:
+    # Baseline:
     models_config = [
         {
             "name": "Baseline_LR",
             "type": "sklearn",
             "path": BASE_DIR
             / "mlruns/1/models/m-10b0ac281d4c40629b89914e7f92dbb0/artifacts/model.pkl",
-        },
-        {
-            "name": "FineTuned_BERT",
-            "type": "transformer",
-            "path": BASE_DIR / "saved_models/fine_tuned_bert",
-        },
+        }
     ]
+
+    # Fine-tunded transformers:
+    saved_models_dir = BASE_DIR / "saved_models"
+
+    if saved_models_dir.exists():
+        for model_dir in saved_models_dir.iterdir():
+            if model_dir.is_dir() and (model_dir / "config.json").exists():
+                models_config.append(
+                    {"name": model_dir.name, "type": "transformer", "path": model_dir}
+                )
 
     summary_metrics = []
 
