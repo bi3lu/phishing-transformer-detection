@@ -2,9 +2,6 @@
 # run_experiments.sh
 # Runs fine-tuning for all defined experiments in params.yaml
 
-# Ensure we are in the project root
-# cd "$(dirname "$0")/.."
-
 # List of experiments
 EXPERIMENTS=("herbert-base" "polish-roberta-v2" "xlm-roberta-base" "distilbert-multilingual")
 
