@@ -1,3 +1,4 @@
+# mypy: ignore-missing-imports=True
 import os
 import pickle
 from datetime import datetime
