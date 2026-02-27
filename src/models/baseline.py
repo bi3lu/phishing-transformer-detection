@@ -1,9 +1,12 @@
+import os
+
+import joblib  # type: ignore
 import mlflow  # type: ignore
 import yaml  # type: ignore
 from sklearn.feature_extraction.text import TfidfVectorizer  # type: ignore
 from sklearn.linear_model import LogisticRegression  # type: ignore
 from sklearn.metrics import f1_score  # type: ignore
-from sklearn.metrics import (
+from sklearn.metrics import (  # type: ignore
     classification_report,
     precision_score,
     recall_score,
@@ -51,8 +54,10 @@ def main() -> None:
     This function trains a text classification pipeline consisting of
     TF-IDF vectorization followed by Logistic Regression. It evaluates
     the model on validation and test splits, logs metrics and parameters
-    to MLflow, saves the trained model artifact, and outputs detailed
-    logs including a classification report.
+    to MLflow, and saves the trained pipeline both as an MLflow artifact
+    and locally under ``saved_models/baseline`` so that the output layout
+    matches the fine‑tuned transformer experiments.
+    Detailed logs including a classification report are emitted.
 
     The dataset splits are expected to be stored as CSV files in
     ``SPLIT_DATA_DIR`` with names: train.csv, val.csv, and test.csv.
@@ -130,6 +135,24 @@ def main() -> None:
         logger.info("\n" + classification_report(y_test, test_preds))
 
         mlflow.sklearn.log_model(pipeline, artifact_path="model")
+
+        model_save_path = BASE_DIR / "saved_models" / "baseline"
+
+        if not model_save_path.exists():
+            os.makedirs(model_save_path)
+
+        pipeline_path = model_save_path / "pipeline.joblib"
+        logger.info(f"Saving baseline pipeline to {pipeline_path}")
+        joblib.dump(pipeline, pipeline_path)
+        config_path = model_save_path / "config.yaml"
+
+        with open(config_path, "w") as cf:
+            yaml.safe_dump(
+                {"tfidf": tfidf_params, "logistic_regression": lr_params}, cf
+            )
+
+        mlflow.log_artifact(str(pipeline_path), artifact_path="model")
+        mlflow.log_artifact(str(config_path), artifact_path="model")
 
     logger.info("Baseline experiment finished successfully.")
 

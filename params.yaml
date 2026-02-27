@@ -8,9 +8,31 @@ baseline:
     max_iter: 1000
     class_weight: "balanced"
 
-finetune:
-  model_name: "allegro/herbert-base-cased"
-  max_length: 512
-  batch_size: 8
-  epochs: 3
-  learning_rate: 2.0e-5
+experiments:
+  - name: "herbert-base"
+    model_name: "allegro/herbert-base-cased"
+    max_length: 512
+    batch_size: 8
+    epochs: 3
+    learning_rate: 2.0e-5
+
+  - name: "polish-roberta-v2"
+    model_name: "sdadas/polish-roberta-base-v2"
+    max_length: 512
+    batch_size: 8
+    epochs: 3
+    learning_rate: 2.0e-5
+
+  - name: "xlm-roberta-base"
+    model_name: "FacebookAI/xlm-roberta-base"
+    max_length: 512
+    batch_size: 8
+    epochs: 3
+    learning_rate: 2.0e-5
+
+  - name: "distilbert-multilingual"
+    model_name: "distilbert-base-multilingual-cased"
+    max_length: 512
+    batch_size: 8
+    epochs: 3
+    learning_rate: 2.0e-5

@@ -1,3 +1,4 @@
+import argparse
 import os
 from typing import Any, Dict
 
@@ -9,7 +10,7 @@ from datasets import Dataset, DatasetDict  # type: ignore
 from sklearn.metrics import accuracy_score  # type: ignore
 from sklearn.metrics import precision_recall_fscore_support
 from transformers import AutoModelForSequenceClassification  # type: ignore
-from transformers import (
+from transformers import (  # type: ignore
     AutoTokenizer,
     DataCollatorWithPadding,
     Trainer,
@@ -146,23 +147,46 @@ def main():
     loop using Hugging Face Trainer. Logs metrics and artifacts to
     MLflow and saves the final model to disk.
     """
+    parser = argparse.ArgumentParser(description="Fine-tune a transformer model.")
+    parser.add_argument(
+        "--experiment_name",
+        type=str,
+        required=True,
+        help="Name of the experiment to run from params.yaml",
+    )
+    args = parser.parse_args()
+
     params_path = BASE_DIR / "params.yaml"
 
     with open(params_path, "r") as f:
-        config = yaml.safe_load(f)
+        full_config = yaml.safe_load(f)
 
-    ft_config = config["finetune"]
-    model_name = ft_config["model_name"]
-    max_length = ft_config["max_length"]
-    batch_size = ft_config["batch_size"]
-    epochs = ft_config["epochs"]
-    learning_rate = float(ft_config["learning_rate"])
+    # Find the experiment config
+    experiment_config = next(
+        (
+            exp
+            for exp in full_config["experiments"]
+            if exp["name"] == args.experiment_name
+        ),
+        None,
+    )
+
+    if experiment_config is None:
+        raise ValueError(
+            f"Experiment '{args.experiment_name}' not found in params.yaml"
+        )
+
+    model_name = experiment_config["model_name"]
+    max_length = experiment_config["max_length"]
+    batch_size = experiment_config["batch_size"]
+    epochs = experiment_config["epochs"]
+    learning_rate = float(experiment_config["learning_rate"])
 
     mlflow.set_experiment("phishing_transformer_finetune")
-    mlflow.start_run()
+    mlflow.start_run(run_name=args.experiment_name)
 
     # Log parameters:
-    mlflow.log_params(ft_config)
+    mlflow.log_params(experiment_config)
 
     logger.info(f"Loading tokenizer: {model_name}")
     tokenizer = AutoTokenizer.from_pretrained(model_name)
@@ -179,8 +203,10 @@ def main():
 
     data_collator = DataCollatorWithPadding(tokenizer=tokenizer)
 
+    output_dir = f"./results/{args.experiment_name}"
+
     training_args = TrainingArguments(
-        output_dir="./results",
+        output_dir=output_dir,
         eval_strategy="epoch",
         save_strategy="epoch",
         learning_rate=learning_rate,
@@ -191,7 +217,7 @@ def main():
         load_best_model_at_end=True,
         metric_for_best_model="f1",
         logging_steps=10,
-        logging_dir="./logs",
+        logging_dir=f"./logs/{args.experiment_name}",
         report_to="mlflow",
     )
 
@@ -204,7 +230,7 @@ def main():
         compute_metrics=compute_metrics,
     )
 
-    logger.info("Starting training...")
+    logger.info(f"Starting training for experiment: {args.experiment_name}...")
     trainer.train()
 
     logger.info("Evaluating on test set...")
@@ -215,7 +241,7 @@ def main():
     logger.info(f"Test results: {test_results}")
     mlflow.log_metrics(test_results)
 
-    model_save_path = "./saved_models/fine_tuned_bert"
+    model_save_path = f"./saved_models/{args.experiment_name}"
 
     if not os.path.exists(model_save_path):
         os.makedirs(model_save_path)
