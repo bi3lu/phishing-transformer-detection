@@ -1,8 +1,8 @@
 import argparse
 from typing import Tuple
 
-import mlflow  # type: ignore
-import pandas as pd  # type: ignore
+import mlflow
+import pandas as pd
 
 from src.config import LABEL_COL, SPLIT_DATA_DIR, TEXT_COL
 from src.models.utils import evaluate_model, load_model
@@ -93,9 +93,7 @@ def main(model_uri: str = "", models_dir: str = "", threshold: float = 0.5) -> N
                     evaluate_model(model, X_test, y_test, threshold)
 
                 except Exception as e:
-                    logger.warning(
-                        f"Standard loading failed for {entry}: {e}, trying transformer loader"
-                    )
+                    logger.warning(f"Standard loading failed for {entry}: {e}, trying transformer loader")
 
                     try:
                         from src.evaluation.threshold_analysis import (
@@ -110,9 +108,7 @@ def main(model_uri: str = "", models_dir: str = "", threshold: float = 0.5) -> N
                         evaluate_predictions(probs, y_test, threshold)
 
                     except Exception as e2:
-                        logger.error(
-                            f"Also failed to evaluate transformer model {entry}: {e2}"
-                        )
+                        logger.error(f"Also failed to evaluate transformer model {entry}: {e2}")
                     continue
     else:
         mlflow.set_experiment("phishing_evaluation")
@@ -124,9 +120,7 @@ def main(model_uri: str = "", models_dir: str = "", threshold: float = 0.5) -> N
 
 # Entry point:
 if __name__ == "__main__":
-    parser = argparse.ArgumentParser(
-        description="Evaluate a trained model or a directory of models."
-    )
+    parser = argparse.ArgumentParser(description="Evaluate a trained model or a directory of models.")
     group = parser.add_mutually_exclusive_group(required=True)
     group.add_argument(
         "--model_uri",

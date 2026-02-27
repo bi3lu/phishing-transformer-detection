@@ -1,6 +1,7 @@
 from datetime import datetime
+from typing import Any, Dict
 
-import pandas as pd  # type: ignore
+import pandas as pd
 
 from src.config import PROCESSED_DATA_DIR, RAW_DATA_DIR
 from src.utils.logger import get_logger
@@ -13,7 +14,7 @@ class DataPreprocessor:
     """Encapsulates logic for parsing and structuring raw phishing data."""
 
     @staticmethod
-    def parse_record(line: str) -> dict:
+    def parse_record(line: str) -> Dict[str, Any]:
         """Parse a single raw text line into a dictionary of key-value pairs.
 
         The input line is expected to contain fields separated by the '|'
@@ -56,7 +57,7 @@ class DataPreprocessor:
         return sender
 
     @classmethod
-    def build_text_field(cls, record: dict) -> str:
+    def build_text_field(cls, record: Dict[str, Any]) -> str:
         """Construct a structured text representation from a parsed record.
 
         Args:

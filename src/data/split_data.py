@@ -1,7 +1,7 @@
 from typing import Tuple
 
-import pandas as pd  # type: ignore
-from sklearn.model_selection import train_test_split  # type: ignore
+import pandas as pd
+from sklearn.model_selection import train_test_split
 
 from src.config import (
     LABEL_COL,
@@ -93,9 +93,7 @@ def split_dataset(
         ValueError: If the provided split proportions do not sum to 1.0.
     """
     if abs(train_size + val_size + test_size - 1.0) > 1e-6:
-        raise ValueError(
-            f"Split proportions must sum to 1.0. Got: {train_size + val_size + test_size}"
-        )
+        raise ValueError(f"Split proportions must sum to 1.0. Got: {train_size + val_size + test_size}")
 
     train_df, temp_df = train_test_split(
         df, test_size=(1 - test_size), stratify=df[LABEL_COL], random_state=RANDOM_STATE
@@ -111,9 +109,7 @@ def split_dataset(
     return (train_df, val_df, test_df)
 
 
-def save_splits(
-    train_df: pd.DataFrame, val_df: pd.DataFrame, test_df: pd.DataFrame
-) -> None:
+def save_splits(train_df: pd.DataFrame, val_df: pd.DataFrame, test_df: pd.DataFrame) -> None:
     """Save dataset splits to CSV files.
 
     Args:

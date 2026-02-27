@@ -1,7 +1,7 @@
 import logging
 import sys
 
-import colorlog  # type: ignore
+import colorlog
 
 
 def get_logger(name: str) -> logging.Logger:

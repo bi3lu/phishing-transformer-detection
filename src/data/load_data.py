@@ -1,6 +1,6 @@
 from typing import Tuple
 
-import pandas as pd  # type: ignore
+import pandas as pd
 
 from src.config import LABEL_COL, SPLIT_DATA_DIR, TEXT_COL
 

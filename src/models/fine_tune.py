@@ -2,15 +2,14 @@ import argparse
 import os
 from typing import Any, Dict
 
-import mlflow  # type: ignore
-import pandas as pd  # type: ignore
-import torch  # type: ignore
-import yaml  # type: ignore
-from datasets import Dataset, DatasetDict  # type: ignore
-from sklearn.metrics import accuracy_score  # type: ignore
-from sklearn.metrics import precision_recall_fscore_support
-from transformers import AutoModelForSequenceClassification  # type: ignore
-from transformers import (  # type: ignore
+import mlflow
+import pandas as pd
+import torch
+import yaml
+from datasets import Dataset, DatasetDict
+from sklearn.metrics import accuracy_score, precision_recall_fscore_support
+from transformers import (
+    AutoModelForSequenceClassification,
     AutoTokenizer,
     DataCollatorWithPadding,
     Trainer,
@@ -71,7 +70,7 @@ def prepare_dataset(df: pd.DataFrame, tokenizer: Any, max_length: int) -> Datase
     dataset = Dataset.from_pandas(df[[TEXT_COL, LABEL_COL]])
     dataset = dataset.rename_column(LABEL_COL, "labels")
 
-    def tokenize_function(examples):
+    def tokenize_function(examples: Dict[str, Any]) -> Any:
         return tokenizer(
             examples[TEXT_COL],
             padding="max_length",
@@ -114,7 +113,7 @@ def load_and_prepare_data(tokenizer: Any, max_length: int) -> DatasetDict:
     return DatasetDict(data)
 
 
-def compute_metrics(pred) -> Dict[str, Any]:
+def compute_metrics(pred: Any) -> Dict[str, Any]:
     """Compute evaluation metrics for the trainer.
 
     Calculates accuracy, precision, recall, and F1-score for binary
@@ -130,16 +129,14 @@ def compute_metrics(pred) -> Dict[str, Any]:
     """
     labels = pred.label_ids
     preds = pred.predictions.argmax(-1)
-    precision, recall, f1, _ = precision_recall_fscore_support(
-        labels, preds, average="binary"
-    )
+    precision, recall, f1, _ = precision_recall_fscore_support(labels, preds, average="binary")
     acc = accuracy_score(labels, preds)
 
     return {"accuracy": acc, "f1": f1, "precision": precision, "recall": recall}
 
 
 # Main:
-def main():
+def main() -> None:
     """Run the fine-tuning pipeline for a Transformer model.
 
     Loads configuration parameters from 'params.yaml', initializes the
@@ -163,18 +160,12 @@ def main():
 
     # Find the experiment config
     experiment_config = next(
-        (
-            exp
-            for exp in full_config["experiments"]
-            if exp["name"] == args.experiment_name
-        ),
+        (exp for exp in full_config["experiments"] if exp["name"] == args.experiment_name),
         None,
     )
 
     if experiment_config is None:
-        raise ValueError(
-            f"Experiment '{args.experiment_name}' not found in params.yaml"
-        )
+        raise ValueError(f"Experiment '{args.experiment_name}' not found in params.yaml")
 
     model_name = experiment_config["model_name"]
     max_length = experiment_config["max_length"]
@@ -234,9 +225,7 @@ def main():
     trainer.train()
 
     logger.info("Evaluating on test set...")
-    test_results = trainer.evaluate(
-        tokenized_datasets["test"], metric_key_prefix="test"
-    )
+    test_results = trainer.evaluate(tokenized_datasets["test"], metric_key_prefix="test")
 
     logger.info(f"Test results: {test_results}")
     mlflow.log_metrics(test_results)

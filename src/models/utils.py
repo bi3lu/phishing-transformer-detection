@@ -1,14 +1,16 @@
-import mlflow  # type: ignore
-import numpy as np  # type: ignore
-from sklearn.metrics import classification_report  # type: ignore
-from sklearn.metrics import (  # type: ignore
+from typing import Any
+
+import mlflow
+import numpy as np
+from sklearn.metrics import (
+    classification_report,
     confusion_matrix,
     f1_score,
     precision_score,
     recall_score,
     roc_auc_score,
 )
-from sklearn.pipeline import Pipeline  # type: ignore
+from sklearn.pipeline import Pipeline
 
 from src.utils.logger import get_logger
 
@@ -58,7 +60,7 @@ def load_model(model_uri: str) -> Pipeline:
         except Exception:
             joblib_file = path / "pipeline.joblib"
             if joblib_file.exists():
-                import joblib  # type: ignore
+                import joblib
 
                 return joblib.load(joblib_file)
             raise
@@ -79,7 +81,7 @@ def apply_threshold(probs: np.ndarray, threshold: float) -> np.ndarray:
     return (probs >= threshold).astype(int)
 
 
-def evaluate_model(model, X_test, y_test, threshold: float = 0.5) -> None:
+def evaluate_model(model: Any, X_test: Any, y_test: Any, threshold: float = 0.5) -> None:
     """Evaluate a trained model on a test set.
 
     Computes predicted probabilities, applies a classification threshold,
@@ -119,12 +121,10 @@ def evaluate_model(model, X_test, y_test, threshold: float = 0.5) -> None:
 
     # log to MLflow if a run is active
     if mlflow.active_run():
-        mlflow.log_metrics(
-            {"f1": f1, "precision": precision, "recall": recall, "auc": auc}
-        )
+        mlflow.log_metrics({"f1": f1, "precision": precision, "recall": recall, "auc": auc})
 
 
-def evaluate_predictions(probs: np.ndarray, y_test, threshold: float = 0.5) -> None:
+def evaluate_predictions(probs: np.ndarray, y_test: Any, threshold: float = 0.5) -> None:
     """Evaluate using pre-computed positive-class probabilities.
 
     This helper is used when the model object itself cannot be
@@ -160,6 +160,4 @@ def evaluate_predictions(probs: np.ndarray, y_test, threshold: float = 0.5) -> N
     logger.info("\n" + classification_report(y_test, preds))
 
     if mlflow.active_run():
-        mlflow.log_metrics(
-            {"f1": f1, "precision": precision, "recall": recall, "auc": auc}
-        )
+        mlflow.log_metrics({"f1": f1, "precision": precision, "recall": recall, "auc": auc})
