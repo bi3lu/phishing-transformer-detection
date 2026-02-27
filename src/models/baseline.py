@@ -1,18 +1,19 @@
 import os
+from typing import Any
 
-import joblib  # type: ignore
-import mlflow  # type: ignore
-import yaml  # type: ignore
-from sklearn.feature_extraction.text import TfidfVectorizer  # type: ignore
-from sklearn.linear_model import LogisticRegression  # type: ignore
-from sklearn.metrics import f1_score  # type: ignore
-from sklearn.metrics import (  # type: ignore
+import joblib
+import mlflow
+import yaml
+from sklearn.feature_extraction.text import TfidfVectorizer
+from sklearn.linear_model import LogisticRegression
+from sklearn.metrics import (
     classification_report,
+    f1_score,
     precision_score,
     recall_score,
     roc_auc_score,
 )
-from sklearn.pipeline import Pipeline  # type: ignore
+from sklearn.pipeline import Pipeline
 
 from src.config import BASE_DIR, RANDOM_STATE
 from src.data.load_data import load_split, prepare_xy
@@ -23,7 +24,7 @@ logger = get_logger(__name__)
 
 
 # Logging metrics:
-def log_metrics(y_true, y_pred, y_probs, prefix: str = "val") -> None:
+def log_metrics(y_true: Any, y_pred: Any, y_probs: Any, prefix: str = "val") -> None:
     f1 = f1_score(y_true, y_pred)
     precision = precision_score(y_true, y_pred)
     recall = recall_score(y_true, y_pred)
@@ -147,9 +148,7 @@ def main() -> None:
         config_path = model_save_path / "config.yaml"
 
         with open(config_path, "w") as cf:
-            yaml.safe_dump(
-                {"tfidf": tfidf_params, "logistic_regression": lr_params}, cf
-            )
+            yaml.safe_dump({"tfidf": tfidf_params, "logistic_regression": lr_params}, cf)
 
         mlflow.log_artifact(str(pipeline_path), artifact_path="model")
         mlflow.log_artifact(str(config_path), artifact_path="model")

@@ -1,23 +1,21 @@
-# mypy: ignore-missing-imports=True
 import os
 import pickle
 from datetime import datetime
 from pathlib import Path
-from typing import List, Optional, Union
+from typing import Any, Dict, List, Optional, Union
 
-import matplotlib.pyplot as plt  # type: ignore
-import numpy as np  # type: ignore
-import pandas as pd  # type: ignore
-import seaborn as sns  # type: ignore
-import torch  # type: ignore
-from sklearn.metrics import (  # type: ignore
+import matplotlib.pyplot as plt
+import numpy as np
+import pandas as pd
+import torch
+from sklearn.metrics import (
     confusion_matrix,
     f1_score,
     precision_score,
     recall_score,
 )
-from tqdm import tqdm  # type: ignore
-from transformers import (  # type: ignore
+from tqdm import tqdm
+from transformers import (
     AutoModelForSequenceClassification,
     AutoTokenizer,
 )
@@ -89,9 +87,7 @@ def calculate_threshold_metrics(
     return pd.DataFrame(results)
 
 
-def load_predictions_sklearn(
-    model_path: Union[str, Path], X: pd.Series
-) -> np.ndarray:  # TODO: Add docstring
+def load_predictions_sklearn(model_path: Union[str, Path], X: pd.Series) -> np.ndarray:  # TODO: Add docstring
     logger.info(f"Loading sklearn model from {model_path}...")
 
     with open(model_path, "rb") as f:
@@ -112,11 +108,7 @@ def load_predictions_transformer(
     logger.info(f"Loading transformer model from {model_path}...")
 
     if device is None:
-        device = (
-            "cuda"
-            if torch.cuda.is_available()
-            else "mps" if torch.backends.mps.is_available() else "cpu"
-        )
+        device = "cuda" if torch.cuda.is_available() else "mps" if torch.backends.mps.is_available() else "cpu"
 
     tokenizer = AutoTokenizer.from_pretrained(model_path)
     model = AutoModelForSequenceClassification.from_pretrained(model_path)
@@ -144,18 +136,14 @@ def load_predictions_transformer(
     return np.array(all_probs)
 
 
-def plot_metrics(
-    df_results: pd.DataFrame, model_name: str, output_dir: Path
-):  # TODO: Add docstring
+def plot_metrics(df_results: pd.DataFrame, model_name: str, output_dir: Path) -> None:  # TODO: Add docstring
     timestamp = datetime.now().strftime("%Y%m%d_%H%M%S")
 
     # 1. Precision-Recall vs Threshold:
     plt.style.use("seaborn-v0_8-whitegrid")
 
     plt.figure(figsize=(10, 6))
-    plt.plot(
-        df_results["threshold"], df_results["precision"], label="Precision", marker="."
-    )
+    plt.plot(df_results["threshold"], df_results["precision"], label="Precision", marker=".")
 
     plt.plot(df_results["threshold"], df_results["recall"], label="Recall", marker=".")
     plt.plot(
@@ -203,7 +191,7 @@ def plot_metrics(
 
 
 # Main:
-def main():
+def main() -> None:
     output_dir = BASE_DIR / "results" / "threshold_analysis"
     output_dir.mkdir(parents=True, exist_ok=True)
 
@@ -213,12 +201,11 @@ def main():
     X_test, y_test = prepare_xy(df_test)
 
     # Baseline:
-    models_config = [
+    models_config: List[Dict[str, Any]] = [
         {
             "name": "Baseline_LR",
             "type": "sklearn",
-            "path": BASE_DIR
-            / "mlruns/1/models/m-10b0ac281d4c40629b89914e7f92dbb0/artifacts/model.pkl",
+            "path": BASE_DIR / "mlruns/1/models/m-10b0ac281d4c40629b89914e7f92dbb0/artifacts/model.pkl",
         }
     ]
 
@@ -228,21 +215,17 @@ def main():
     if saved_models_dir.exists():
         for model_dir in saved_models_dir.iterdir():
             if model_dir.is_dir() and (model_dir / "config.json").exists():
-                models_config.append(
-                    {"name": model_dir.name, "type": "transformer", "path": model_dir}
-                )
+                models_config.append({"name": model_dir.name, "type": "transformer", "path": model_dir})
 
     summary_metrics = []
 
     for config in models_config:
-        model_name = config["name"]
-        model_path = config["path"]
-        model_type = config["type"]
+        model_name = str(config["name"])
+        model_path = Path(str(config["path"]))
+        model_type = str(config["type"])
 
         if not os.path.exists(model_path):
-            logger.warning(
-                f"Model path not found: {model_path}. Skipping {model_name}."
-            )
+            logger.warning(f"Model path not found: {model_path}. Skipping {model_name}.")
             continue
 
         logger.info(f"Processing {model_name}...")
