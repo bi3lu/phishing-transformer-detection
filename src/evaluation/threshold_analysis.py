@@ -31,7 +31,7 @@ logger = get_logger(__name__)
 def calculate_threshold_metrics(
     y_true: NDArray[np.int_],
     y_probs: NDArray[np.floating[Any]],
-    thresholds: Optional[np.ndarray] = None,
+    thresholds: Optional[NDArray[np.floating[Any]]] = None,
     fp_cost: float = 1.0,
     fn_cost: float = 20.0,
 ) -> pd.DataFrame:
@@ -245,7 +245,7 @@ def main() -> None:
             continue
 
         # Calculate metrics:
-        df_results = calculate_threshold_metrics(y_test, y_probs)
+        df_results = calculate_threshold_metrics(y_test.to_numpy(), y_probs)
 
         # Save full results
         timestamp = datetime.now().strftime("%Y%m%d_%H%M%S")
