@@ -30,7 +30,7 @@ logger = get_logger(__name__)
 
 def calculate_threshold_metrics(
     y_true: NDArray[np.int_],
-    y_probs: NDArray[np.float_],
+    y_probs: NDArray[np.floating[Any]],
     thresholds: Optional[np.ndarray] = None,
     fp_cost: float = 1.0,
     fn_cost: float = 20.0,
@@ -88,7 +88,9 @@ def calculate_threshold_metrics(
     return pd.DataFrame(results)
 
 
-def load_predictions_sklearn(model_path: Union[str, Path], X: pd.Series) -> NDArray[np.float_]:  # TODO: Add docstring
+def load_predictions_sklearn(
+    model_path: Union[str, Path], X: pd.Series
+) -> NDArray[np.floating[Any]]:  # TODO: Add docstring
     logger.info(f"Loading sklearn model from {model_path}...")
 
     with open(model_path, "rb") as f:
@@ -96,7 +98,7 @@ def load_predictions_sklearn(model_path: Union[str, Path], X: pd.Series) -> NDAr
 
     probs = model.predict_proba(X)[:, 1]
 
-    return probs
+    return np.asarray(probs, dtype=np.float64)
 
 
 def load_predictions_transformer(
@@ -105,7 +107,7 @@ def load_predictions_transformer(
     batch_size: int = 16,
     max_length: int = 128,
     device: Optional[str] = None,
-) -> NDArray[np.float_]:  # TODO: Add docstring
+) -> NDArray[np.floating[Any]]:  # TODO: Add docstring
     logger.info(f"Loading transformer model from {model_path}...")
 
     if device is None:
@@ -134,7 +136,7 @@ def load_predictions_transformer(
             class_1_probs = probs[:, 1].cpu().numpy().astype(float)
             all_probs.extend([float(x) for x in class_1_probs])
 
-    return np.array(all_probs, dtype=float)
+    return np.array(all_probs, dtype=np.float64)
 
 
 def plot_metrics(df_results: pd.DataFrame, model_name: str, output_dir: Path) -> None:  # TODO: Add docstring
