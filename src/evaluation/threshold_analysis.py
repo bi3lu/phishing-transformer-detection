@@ -8,6 +8,7 @@ import matplotlib.pyplot as plt
 import numpy as np
 import pandas as pd
 import torch
+from numpy.typing import NDArray
 from sklearn.metrics import (
     confusion_matrix,
     f1_score,
@@ -28,8 +29,8 @@ logger = get_logger(__name__)
 
 
 def calculate_threshold_metrics(
-    y_true: np.ndarray,
-    y_probs: np.ndarray,
+    y_true: NDArray[np.int_],
+    y_probs: NDArray[np.float_],
     thresholds: Optional[np.ndarray] = None,
     fp_cost: float = 1.0,
     fn_cost: float = 20.0,
@@ -87,7 +88,7 @@ def calculate_threshold_metrics(
     return pd.DataFrame(results)
 
 
-def load_predictions_sklearn(model_path: Union[str, Path], X: pd.Series) -> np.ndarray:  # TODO: Add docstring
+def load_predictions_sklearn(model_path: Union[str, Path], X: pd.Series) -> NDArray[np.float_]:  # TODO: Add docstring
     logger.info(f"Loading sklearn model from {model_path}...")
 
     with open(model_path, "rb") as f:
@@ -104,7 +105,7 @@ def load_predictions_transformer(
     batch_size: int = 16,
     max_length: int = 128,
     device: Optional[str] = None,
-) -> np.ndarray:  # TODO: Add docstring
+) -> NDArray[np.float_]:  # TODO: Add docstring
     logger.info(f"Loading transformer model from {model_path}...")
 
     if device is None:
@@ -115,7 +116,7 @@ def load_predictions_transformer(
     model.to(device)
     model.eval()
 
-    all_probs = []
+    all_probs: List[float] = []
 
     for i in tqdm(range(0, len(texts), batch_size), desc="Inference"):
         batch_texts = texts[i : i + batch_size]
@@ -130,10 +131,10 @@ def load_predictions_transformer(
         with torch.no_grad():
             outputs = model(**inputs)
             probs = torch.nn.functional.softmax(outputs.logits, dim=-1)
-            class_1_probs = probs[:, 1].cpu().numpy()
-            all_probs.extend(class_1_probs)
+            class_1_probs = probs[:, 1].cpu().numpy().astype(float)
+            all_probs.extend([float(x) for x in class_1_probs])
 
-    return np.array(all_probs)
+    return np.array(all_probs, dtype=float)
 
 
 def plot_metrics(df_results: pd.DataFrame, model_name: str, output_dir: Path) -> None:  # TODO: Add docstring
