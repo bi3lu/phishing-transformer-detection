@@ -4,6 +4,7 @@ from typing import Any, Dict
 import pandas as pd
 
 from src.config import PROCESSED_DATA_DIR, RAW_DATA_DIR
+from src.features.extractor import PhishingFeatureExtractor
 from src.utils.logger import get_logger
 
 # Setup logging:
@@ -11,22 +12,11 @@ logger = get_logger(__name__)
 
 
 class DataPreprocessor:
-    """Encapsulates logic for parsing and structuring raw phishing data."""
+    def __init__(self) -> None:
+        self.extractor = PhishingFeatureExtractor()
 
     @staticmethod
     def parse_record(line: str) -> Dict[str, Any]:
-        """Parse a single raw text line into a dictionary of key-value pairs.
-
-        The input line is expected to contain fields separated by the '|'
-        character, where each field has the format "key:value". Splitting
-        occurs on the first colon only. The "ID" field is ignored.
-
-        Args:
-            line: A raw string from the text file.
-
-        Returns:
-            A dictionary containing parsed keys and values.
-        """
         parts = line.strip().split("|")
         record = {}
 
@@ -36,58 +26,34 @@ class DataPreprocessor:
 
                 if key.strip() == "ID":
                     continue
-
                 record[key.strip()] = value.strip()
 
         return record
 
     @staticmethod
     def sanitize_sender(sender: str, sender_to_mask: str = "inny") -> str:
-        """Normalize and optionally mask the sender value.
-
-        Args:
-            sender: Raw sender name.
-            sender_to_mask: Value to replace with mask (default: "inny").
-
-        Returns:
-            Sanitized sender or "<MASK>".
-        """
         if not sender or sender.lower() == sender_to_mask:
             return "<MASK>"
+
         return sender
 
-    @classmethod
-    def build_text_field(cls, record: Dict[str, Any]) -> str:
-        """Construct a structured text representation from a parsed record.
-
-        Args:
-            record: Dictionary containing parsed record fields.
-
-        Returns:
-            Formatted string for NLP processing.
-        """
+    def build_text_field(self, record: Dict[str, Any]) -> str:
         parts = []
 
         if "Type" in record:
             parts.append(f"[TYPE] {record['Type']}")
-
         if "Sender_brand" in record:
-            sender = cls.sanitize_sender(record.get("Sender_brand", "").strip())
+            sender = self.sanitize_sender(record.get("Sender_brand", "").strip())
             parts.append(f"[SENDER] {sender}")
 
-        if "Title" in record:
-            parts.append(f"[TITLE] {record['Title']}")
-
-        if "Content" in record:
-            parts.append(f"[CONTENT] {record['Content']}")
-
+        parts.append(f"[CONTENT] {record.get('Content', '')}")
         return "\n".join(parts)
 
 
 # Main:
 def main() -> None:
     """Aggregate raw text datasets into a single processed dataset."""
-    logger.info("Starting data processing...")
+    logger.info("Starting data processing with Feature Injection...")
 
     all_data = []
     preprocessor = DataPreprocessor()
@@ -117,20 +83,13 @@ def main() -> None:
 
     PROCESSED_DATA_DIR.mkdir(parents=True, exist_ok=True)
 
-    # Get current timestamp:
     timestamp = datetime.now().strftime("%Y%m%d_%H%M%S")
 
-    # Save to .parquet:
-    output_path_parquet = PROCESSED_DATA_DIR / f"processed_data_{timestamp}.parquet"
-    df.to_parquet(output_path_parquet, index=False)
-
-    # Save to .csv:
     output_path_csv = PROCESSED_DATA_DIR / f"processed_data_{timestamp}.csv"
     df.to_csv(output_path_csv, index=False)
 
-    logger.info(f"Data processing complete. Files saved to {PROCESSED_DATA_DIR}")
+    logger.info(f"Data processing complete. Saved {len(df)} records to {output_path_csv}")
 
 
-# Entry point:
 if __name__ == "__main__":
     main()

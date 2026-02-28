@@ -14,7 +14,11 @@ dependencies = [
     "pyyaml",
     "joblib",
     "numpy",
-    "tqdm"
+    "tqdm",
+    "lime",
+    "shap",
+    "matplotlib",
+    "seaborn",
 ]
 
 [project.optional-dependencies]
