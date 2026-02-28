@@ -1,3 +1,8 @@
+"""Baseline phishing detection using TF-IDF and Logistic Regression.
+
+Trains and evaluates a classical machine learning pipeline as a baseline
+for comparison with transformer-based models."""
+
 import os
 from typing import Any
 
@@ -25,6 +30,17 @@ logger = get_logger(__name__)
 
 # Logging metrics:
 def log_metrics(y_true: Any, y_pred: Any, y_probs: Any, prefix: str = "val") -> None:
+    """Compute and log classification metrics.
+
+    Calculates F1, precision, recall, and ROC-AUC scores, logs them using
+    the logger and MLflow if a run is active.
+
+    Args:
+        y_true: True labels.
+        y_pred: Predicted labels.
+        y_probs: Predicted probabilities for the positive class.
+        prefix: Metric prefix for logging (e.g., 'val', 'test').
+    """
     f1 = f1_score(y_true, y_pred)
     precision = precision_score(y_true, y_pred)
     recall = recall_score(y_true, y_pred)

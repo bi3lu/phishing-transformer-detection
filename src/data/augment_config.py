@@ -1,3 +1,9 @@
+"""Configuration data for text augmentation strategies.
+
+Defines dictionaries and lists of text patterns used for data augmentation
+in phishing detection, including character substitutions and brand keywords.
+"""
+
 from typing import Dict, List
 
 SHORTCUTS: List[str] = [

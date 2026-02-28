@@ -1,3 +1,11 @@
+"""Dataset splitting and late-stage feature extraction.
+
+Loads processed phishing data, splits it into train/validation/test sets,
+applies data augmentation to training data, extracts phishing indicators,
+and saves the processed splits.
+"""
+
+import random
 from typing import Tuple
 
 import pandas as pd
@@ -16,6 +24,9 @@ from src.utils.logger import get_logger
 
 # Setup logging:
 logger = get_logger(__name__)
+
+# Constants:
+FEATURE_DROPOUT_PROB = 0.3
 
 
 # Helper functions:
@@ -138,24 +149,21 @@ def main() -> None:
     df = get_latest_split()
     validate_dataframe(df)
 
-    # 1. ...
+    # 1. Split dataset into train, validation, and test sets
     train_df, val_df, test_df = split_dataset(df)
 
-    # 2. ...
+    # 2. Initialize augmenter and feature extractor for late-stage processing
     augmenter = PhishingAugmenter(aug_prob=0.1)
     extractor = PhishingFeatureExtractor()
 
-    def process_row(text: str, is_phishing: bool, augment: bool) -> str:
-        # A. ...
+    def _process_row(text: str, is_phishing: bool, augment: bool, is_train: bool = True) -> str:
         parts = text.split("[CONTENT] ", 1)
         meta = parts[0]
         content = parts[1] if len(parts) > 1 else ""
 
-        # B. ...
         if augment and is_phishing:
             content = augmenter.augment(content)
 
-        # C. ...
         features = extractor.get_all_features(content)
         feat_tags = (
             f"[FEAT: URG={features['urgency_score']} "
@@ -165,15 +173,24 @@ def main() -> None:
             f"HOMO={features['has_homograph_attack']}]"
         )
 
-        # D. ...
-        return f"{feat_tags}\n{meta}[CONTENT] {content}"
+        use_tags = True
+
+        if is_train and random.random() < FEATURE_DROPOUT_PROB:
+            use_tags = False
+
+        if use_tags:
+            return f"{feat_tags}\n{meta}[CONTENT] {content}"
+
+        else:
+            return f"{meta}[CONTENT] {content}"
 
     logger.info("Applying augmentation and extracting features for Train...")
-    train_df[TEXT_COL] = train_df.apply(lambda row: process_row(row[TEXT_COL], row[LABEL_COL], augment=True), axis=1)
+    train_df[TEXT_COL] = train_df.apply(lambda row: _process_row(row[TEXT_COL], row[LABEL_COL], augment=True), axis=1)
 
     logger.info("Extracting features for Val and Test (no augmentation)...")
+
     for d in [val_df, test_df]:
-        d[TEXT_COL] = d.apply(lambda row: process_row(row[TEXT_COL], row[LABEL_COL], augment=False), axis=1)
+        d[TEXT_COL] = d.apply(lambda row: _process_row(row[TEXT_COL], row[LABEL_COL], augment=False), axis=1)
 
     save_splits(train_df, val_df, test_df)
 

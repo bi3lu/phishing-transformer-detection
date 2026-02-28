@@ -1,3 +1,10 @@
+"""Fine-tuning transformer models for phishing detection.
+
+Loads pre-trained transformer models, prepares tokenized datasets,
+and trains them with weighted loss to handle class imbalance.
+Saves trained models and metrics to disk and MLflow.
+"""
+
 import argparse
 import os
 from typing import Any, Dict, Tuple, Union
@@ -156,6 +163,12 @@ class WeightedTrainer(Trainer):  # type: ignore[misc]
 
 # Main:
 def main() -> None:
+    """Fine-tune a transformer model for phishing detection.
+
+    Loads experiment configuration from params.yaml, prepares tokenized
+    datasets, initializes a transformer model, and trains it with weighted
+    loss on imbalanced data. Saves the trained model and logs metrics to MLflow.
+    """
     parser = argparse.ArgumentParser(description="Fine-tune a transformer model.")
     parser.add_argument(
         "--experiment_name",

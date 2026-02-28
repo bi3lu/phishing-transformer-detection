@@ -1,3 +1,9 @@
+"""Logging utility with colored console output.
+
+Provides a convenient interface to create configured loggers with
+color-coded output for different log levels.
+"""
+
 import logging
 import sys
 

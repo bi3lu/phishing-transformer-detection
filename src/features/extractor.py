@@ -1,9 +1,20 @@
+"""Feature extraction for phishing detection.
+
+Extracts linguistic, structural, and security-related features from
+email text to identify phishing patterns.
+"""
+
 import re
 from difflib import SequenceMatcher
 from typing import Dict, List
 
 
 class PhishingFeatureExtractor:
+    """Extracts phishing-indicative features from email text.
+
+    Identifies urgency keywords, threats, verification requests, suspicious
+    URLs, homograph attacks, and suspicious domains.
+    """
 
     def __init__(self) -> None:
         # TODO: Extract these lists to separate config file!
@@ -47,20 +58,47 @@ class PhishingFeatureExtractor:
         }
 
     def _extract_urls(self, text: str) -> List[str]:
+        """Extract URLs from text.
+
+        Args:
+            text: Text to extract URLs from.
+
+        Returns:
+            List of URLs found in the text.
+        """
         return re.findall(r'https?://[^\s)"\']+', text.lower())
 
     def _get_domain(self, url: str) -> str:
+        """Extract domain name from URL.
+
+        Args:
+            url: URL to extract domain from.
+
+        Returns:
+            Domain name without protocol.
+        """
         domain = re.sub(r"https?://", "", url)
         return domain.split("/")[0].split(":")[0].split("@")[-1]
 
     def _check_homograph(self, domain: str) -> bool:
-        # 1. ...
+        """Check if a domain uses homograph attack techniques.
+
+        Detects international characters and domain names similar to
+        legitimate banking/service domains.
+
+        Args:
+            domain: Domain name to analyze.
+
+        Returns:
+            True if domain exhibits homograph attack characteristics.
+        """
+        # 1. Check for non-ASCII characters that might be lookalikes
         try:
             domain.encode("ascii")
         except UnicodeEncodeError:
             return True
 
-        # 2. ...
+        # 2. Check for similarity to known legitimate domains
         for legit in self.legit_domains:
             legit_name = legit.split(".")[0]
             domain_name = domain.split(".")[0]
@@ -71,6 +109,15 @@ class PhishingFeatureExtractor:
         return False
 
     def _count_triggers(self, text: str, word_list: List[str]) -> int:
+        """Count occurrences of trigger words (with cap at 5).
+
+        Args:
+            text: Text to search in.
+            word_list: List of keywords to count.
+
+        Returns:
+            Count of keyword occurrences, capped at 5.
+        """
         count = 0
         text_lower = text.lower()
 
@@ -81,6 +128,17 @@ class PhishingFeatureExtractor:
         return min(count, 5)
 
     def _normalize_for_stats(self, text: str) -> str:
+        """Normalize text by replacing similar-looking characters.
+
+        Substitutes lookalike characters (Cyrillic, digits) with ASCII
+        equivalents to detect obfuscation attempts.
+
+        Args:
+            text: Text to normalize.
+
+        Returns:
+            Normalized text with substitutions applied.
+        """
         replacements = {"а": "a", "о": "o", "е": "e", "р": "p", "0": "o", "5": "s", "@": "a"}
 
         for char, rep in replacements.items():
@@ -89,6 +147,17 @@ class PhishingFeatureExtractor:
         return text.lower()
 
     def get_all_features(self, text: str) -> Dict[str, int]:
+        """Extract all phishing-related features from text.
+
+        Computes urgency score, threat score, verification requests,
+        URL counts, and suspicious domain indicators.
+
+        Args:
+            text: Email text to analyze.
+
+        Returns:
+            Dictionary mapping feature names to their extracted values.
+        """
         text = self._normalize_for_stats(text)
         urls = self._extract_urls(text)
 

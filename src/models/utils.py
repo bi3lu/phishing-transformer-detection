@@ -1,3 +1,9 @@
+"""Utilities for model loading and evaluation.
+
+Provides functions to load models from various sources (MLflow, local paths,
+pickled files), apply classification thresholds, and evaluate performance.
+"""
+
 from typing import Any
 
 import mlflow

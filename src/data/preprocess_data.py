@@ -12,11 +12,29 @@ logger = get_logger(__name__)
 
 
 class DataPreprocessor:
+    """Preprocesses raw phishing email data into structured format.
+
+    Parses raw text records, sanitizes sender information, and builds
+    structured text fields for model training.
+    """
+
     def __init__(self) -> None:
+        """Initialize the preprocessor with a feature extractor."""
         self.extractor = PhishingFeatureExtractor()
 
     @staticmethod
     def parse_record(line: str) -> Dict[str, Any]:
+        """Parse a pipe-delimited record into a dictionary.
+
+        Splits a line by pipe characters and processes key:value pairs,
+        skipping the ID field.
+
+        Args:
+            line: A pipe-delimited string containing record data.
+
+        Returns:
+            Dictionary with parsed key-value pairs.
+        """
         parts = line.strip().split("|")
         record = {}
 
@@ -32,12 +50,34 @@ class DataPreprocessor:
 
     @staticmethod
     def sanitize_sender(sender: str, sender_to_mask: str = "inny") -> str:
+        """Sanitize sender information by masking generic entries.
+
+        Replaces empty or generic sender values with a mask token.
+
+        Args:
+            sender: The sender name to sanitize.
+            sender_to_mask: Value to mask (case-insensitive). Defaults to 'inny'.
+
+        Returns:
+            Masked sender ('<MASK>') or original sender name.
+        """
         if not sender or sender.lower() == sender_to_mask:
             return "<MASK>"
 
         return sender
 
     def build_text_field(self, record: Dict[str, Any]) -> str:
+        """Construct a structured text field from record components.
+
+        Combines type, sender, and content into a formatted text field
+        with semantic tags for model input.
+
+        Args:
+            record: Dictionary containing record fields.
+
+        Returns:
+            Formatted text field with tagged components.
+        """
         parts = []
 
         if "Type" in record:
@@ -53,7 +93,12 @@ class DataPreprocessor:
 
 # Main:
 def main() -> None:
-    """Aggregate raw text datasets into a single processed dataset."""
+    """Aggregate raw text datasets into a single processed dataset.
+
+    Iterates through all raw data directories, parses records, sanitizes
+    sender information, constructs text fields, and saves the aggregated
+    dataset as a timestamped CSV file in the processed data directory.
+    """
     logger.info("Starting data processing with Feature Injection...")
 
     all_data = []
