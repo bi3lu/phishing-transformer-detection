@@ -1,19 +1,12 @@
 import random
 import re
-from typing import List
+
+from src.data.augment_config import HOMOGLYPHS, SHORTCUTS
 
 
 class PhishingAugmenter:
     def __init__(self, aug_prob: float = 0.3):
         self.aug_prob = aug_prob
-        self.homoglyphs = {
-            "a": ["а", "@"],
-            "o": ["0", "о"],
-            "e": ["е"],
-            "i": ["1", "l", "!"],
-            "s": ["5", "$"],
-            "p": ["р"],
-        }
 
     def introduce_typos(self, text: str) -> str:
         words = text.split()
@@ -31,8 +24,8 @@ class PhishingAugmenter:
         new_text = ""
 
         for char in text:
-            if char.lower() in self.homoglyphs and random.random() < (self.aug_prob * 0.5):
-                new_text += random.choice(self.homoglyphs[char.lower()])
+            if char.lower() in HOMOGLYPHS and random.random() < (self.aug_prob * 0.5):
+                new_text += random.choice(HOMOGLYPHS[char.lower()])
 
             else:
                 new_text += char
@@ -40,16 +33,7 @@ class PhishingAugmenter:
         return new_text
 
     def mask_shortcuts(self, text: str) -> str:
-        shortcuts = [
-            "InPost",
-            "DPD",
-            "mBank",
-            "PKO",
-            "Allegro",
-            "Netflix",
-        ]  # TODO: Expand and extracto to separate file
-
-        for brand in shortcuts:
+        for brand in SHORTCUTS:
             if random.random() < self.aug_prob:
                 text = re.sub(brand, "[BRAND]", text, flags=re.IGNORECASE)
 

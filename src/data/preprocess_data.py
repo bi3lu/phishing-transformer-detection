@@ -42,6 +42,7 @@ class DataPreprocessor:
 
         if "Type" in record:
             parts.append(f"[TYPE] {record['Type']}")
+
         if "Sender_brand" in record:
             sender = self.sanitize_sender(record.get("Sender_brand", "").strip())
             parts.append(f"[SENDER] {sender}")

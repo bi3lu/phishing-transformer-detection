@@ -10,7 +10,7 @@ from src.config import (
     SPLIT_DATA_DIR,
     TEXT_COL,
 )
-from src.data.augment import PhishingAugmenter
+from src.data.augment_data import PhishingAugmenter
 from src.features.extractor import PhishingFeatureExtractor
 from src.utils.logger import get_logger
 

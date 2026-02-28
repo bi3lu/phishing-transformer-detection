@@ -1,6 +1,13 @@
-#!/bin/bash
+#!/usr/bin/env bash
 # run_experiments.sh
 # Runs fine-tuning for all defined experiments in params.yaml
+
+# ensure we exit on error
+set -e
+
+if [ -f ".venv/bin/activate" ]; then
+    source .venv/bin/activate
+fi
 
 # List of experiments
 EXPERIMENTS=("herbert-base" "polish-roberta-v2" "xlm-roberta-base" "distilbert-multilingual")
@@ -9,14 +16,10 @@ echo "Starting experiments: ${EXPERIMENTS[*]}"
 
 for exp in "${EXPERIMENTS[@]}"; do
     echo "Running experiment: $exp"
-    
-    PYTHONPATH=. python src/models/fine_tune.py --experiment_name "$exp"
-    
-    if [ $? -ne 0 ]; then
-        echo "Error running experiment: $exp"
-        exit 1
-    fi
-    
+
+    # use python3 as a fallback if python is not in PATH
+    PYTHONPATH=. $(command -v python || command -v python3) src/models/fine_tune.py --experiment_name "$exp"
+
     echo "Experiment $exp completed successfully."
 done
 
