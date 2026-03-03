@@ -8,6 +8,15 @@ import re
 from difflib import SequenceMatcher
 from typing import Dict, List
 
+from src.features.extractor_config import (
+    ACTION_KEYWORDS,
+    FINANCIAL_KEYWORDS,
+    LEGIT_DOMAINS,
+    THREAT_KEYWORD,
+    URGENCY_KEYWORD,
+    VERIFICATION_KEYWORD,
+)
+
 
 class PhishingFeatureExtractor:
     """Extracts phishing-indicative features from email text.
@@ -17,45 +26,7 @@ class PhishingFeatureExtractor:
     """
 
     def __init__(self) -> None:
-        # TODO: Extract these lists to separate config file!
-        self.urgency_keywords = [
-            "natychmiast",
-            "pilnie",
-            "bez opóźnienia",
-            "wygasa",
-            "teraz",
-            "szybko",
-            "nie czekaj",
-            "ostatnia szansa",
-            "pośpiesz się",
-        ]
-
-        self.threat_keywords = [
-            "zablokowane",
-            "zablokuje",
-            "wznowić",
-            "przywrócić",
-            "odblokować",
-            "zmień hasło",
-            "weryfikacja",
-            "dezaktywacja",
-            "zagrożenie",
-            "niebezpieczeństwo",
-        ]
-
-        self.verification_keywords = ["potwierdź", "kod", "pin", "hasło", "tożsamość", "zaloguj", "login"]
-
-        self.legit_domains = {
-            "mbank.pl",
-            "pkobp.pl",
-            "ing.pl",
-            "santander.pl",
-            "aliorbank.pl",
-            "poczta-polska.pl",
-            "inpost.pl",
-            "allegro.pl",
-            "facebook.com",
-        }
+        pass
 
     def _extract_urls(self, text: str) -> List[str]:
         """Extract URLs from text.
@@ -99,7 +70,7 @@ class PhishingFeatureExtractor:
             return True
 
         # 2. Check for similarity to known legitimate domains
-        for legit in self.legit_domains:
+        for legit in LEGIT_DOMAINS:
             legit_name = legit.split(".")[0]
             domain_name = domain.split(".")[0]
 
@@ -146,6 +117,20 @@ class PhishingFeatureExtractor:
 
         return text.lower()
 
+    def _calculate_emotionality(self, text: str) -> int:
+        exc_count = text.count("!")
+        ques_count = text.count("?")
+        caps_words = len(re.findall(r"\b[A-Z]{3,}\b", text))
+        score = exc_count + ques_count + caps_words
+
+        return min(score, 5)
+
+    def _get_financial_index(self, text: str, words: List[str]) -> int:
+        count = self._count_triggers(text, words)
+        currency_symbols = len(re.findall(r"(zł|\$|€|PLN|USD|eur)", text, re.IGNORECASE))
+
+        return min(count + currency_symbols, 5)
+
     def get_all_features(self, text: str) -> Dict[str, int]:
         """Extract all phishing-related features from text.
 
@@ -158,13 +143,17 @@ class PhishingFeatureExtractor:
         Returns:
             Dictionary mapping feature names to their extracted values.
         """
-        text = self._normalize_for_stats(text)
-        urls = self._extract_urls(text)
+        raw_text = text
+        normalized_text = self._normalize_for_stats(text).lower()
+        urls = self._extract_urls(normalized_text)
 
         features = {
-            "urgency_score": self._count_triggers(text, self.urgency_keywords),
-            "threat_score": self._count_triggers(text, self.threat_keywords),
-            "verification_request": self._count_triggers(text, self.verification_keywords),
+            "urgency_score": self._count_triggers(normalized_text, URGENCY_KEYWORD),
+            "threat_score": self._count_triggers(normalized_text, THREAT_KEYWORD),
+            "verif_score": self._count_triggers(normalized_text, VERIFICATION_KEYWORD),
+            "action_score": self._count_triggers(normalized_text, ACTION_KEYWORDS),
+            "fin_score": self._get_financial_index(normalized_text, FINANCIAL_KEYWORDS),
+            "emo_score": self._calculate_emotionality(raw_text),
             "num_urls": len(urls),
             "has_suspicious_tld": 0,
             "has_homograph_attack": 0,
