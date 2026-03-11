@@ -20,6 +20,7 @@ from transformers import (
     AutoModelForSequenceClassification,
     AutoTokenizer,
     DataCollatorWithPadding,
+    PreTrainedModel,
     Trainer,
     TrainingArguments,
 )
@@ -151,14 +152,18 @@ class WeightedTrainer(Trainer):
         return_outputs: bool = False,
         num_items_in_batch: Union[torch.Tensor, int, None] = None,
     ) -> Union[torch.Tensor, Tuple[torch.Tensor, Any]]:
-        labels = inputs.get("labels")
 
+        if not isinstance(model, PreTrainedModel):
+            raise TypeError("Expected PreTrainedModel")
+
+        labels = inputs.get("labels")
         if labels is None:
             raise ValueError("Labels are missing from inputs")
 
         outputs = model(**inputs)
         logits = outputs["logits"]
-        num_labels = self.model.config.num_labels
+
+        num_labels = model.config.num_labels
 
         weights = torch.tensor(
             [1.0, 5.0],
