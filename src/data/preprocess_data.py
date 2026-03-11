@@ -4,6 +4,7 @@ from typing import Any, Dict
 import pandas as pd
 
 from src.config import PROCESSED_DATA_DIR, RAW_DATA_DIR
+from src.features.extractor import PhishingFeatureExtractor
 from src.utils.logger import get_logger
 
 # Setup logging:
@@ -11,21 +12,28 @@ logger = get_logger(__name__)
 
 
 class DataPreprocessor:
-    """Encapsulates logic for parsing and structuring raw phishing data."""
+    """Preprocesses raw phishing email data into structured format.
+
+    Parses raw text records, sanitizes sender information, and builds
+    structured text fields for model training.
+    """
+
+    def __init__(self) -> None:
+        """Initialize the preprocessor with a feature extractor."""
+        self.extractor = PhishingFeatureExtractor()
 
     @staticmethod
     def parse_record(line: str) -> Dict[str, Any]:
-        """Parse a single raw text line into a dictionary of key-value pairs.
+        """Parse a pipe-delimited record into a dictionary.
 
-        The input line is expected to contain fields separated by the '|'
-        character, where each field has the format "key:value". Splitting
-        occurs on the first colon only. The "ID" field is ignored.
+        Splits a line by pipe characters and processes key:value pairs,
+        skipping the ID field.
 
         Args:
-            line: A raw string from the text file.
+            line: A pipe-delimited string containing record data.
 
         Returns:
-            A dictionary containing parsed keys and values.
+            Dictionary with parsed key-value pairs.
         """
         parts = line.strip().split("|")
         record = {}
@@ -36,35 +44,39 @@ class DataPreprocessor:
 
                 if key.strip() == "ID":
                     continue
-
                 record[key.strip()] = value.strip()
 
         return record
 
     @staticmethod
     def sanitize_sender(sender: str, sender_to_mask: str = "inny") -> str:
-        """Normalize and optionally mask the sender value.
+        """Sanitize sender information by masking generic entries.
+
+        Replaces empty or generic sender values with a mask token.
 
         Args:
-            sender: Raw sender name.
-            sender_to_mask: Value to replace with mask (default: "inny").
+            sender: The sender name to sanitize.
+            sender_to_mask: Value to mask (case-insensitive). Defaults to 'inny'.
 
         Returns:
-            Sanitized sender or "<MASK>".
+            Masked sender ('<MASK>') or original sender name.
         """
         if not sender or sender.lower() == sender_to_mask:
             return "<MASK>"
+
         return sender
 
-    @classmethod
-    def build_text_field(cls, record: Dict[str, Any]) -> str:
-        """Construct a structured text representation from a parsed record.
+    def build_text_field(self, record: Dict[str, Any]) -> str:
+        """Construct a structured text field from record components.
+
+        Combines type, sender, and content into a formatted text field
+        with semantic tags for model input.
 
         Args:
-            record: Dictionary containing parsed record fields.
+            record: Dictionary containing record fields.
 
         Returns:
-            Formatted string for NLP processing.
+            Formatted text field with tagged components.
         """
         parts = []
 
@@ -72,22 +84,22 @@ class DataPreprocessor:
             parts.append(f"[TYPE] {record['Type']}")
 
         if "Sender_brand" in record:
-            sender = cls.sanitize_sender(record.get("Sender_brand", "").strip())
+            sender = self.sanitize_sender(record.get("Sender_brand", "").strip())
             parts.append(f"[SENDER] {sender}")
 
-        if "Title" in record:
-            parts.append(f"[TITLE] {record['Title']}")
-
-        if "Content" in record:
-            parts.append(f"[CONTENT] {record['Content']}")
-
+        parts.append(f"[CONTENT] {record.get('Content', '')}")
         return "\n".join(parts)
 
 
 # Main:
 def main() -> None:
-    """Aggregate raw text datasets into a single processed dataset."""
-    logger.info("Starting data processing...")
+    """Aggregate raw text datasets into a single processed dataset.
+
+    Iterates through all raw data directories, parses records, sanitizes
+    sender information, constructs text fields, and saves the aggregated
+    dataset as a timestamped CSV file in the processed data directory.
+    """
+    logger.info("Starting data processing with Feature Injection...")
 
     all_data = []
     preprocessor = DataPreprocessor()
@@ -117,20 +129,13 @@ def main() -> None:
 
     PROCESSED_DATA_DIR.mkdir(parents=True, exist_ok=True)
 
-    # Get current timestamp:
     timestamp = datetime.now().strftime("%Y%m%d_%H%M%S")
 
-    # Save to .parquet:
-    output_path_parquet = PROCESSED_DATA_DIR / f"processed_data_{timestamp}.parquet"
-    df.to_parquet(output_path_parquet, index=False)
-
-    # Save to .csv:
     output_path_csv = PROCESSED_DATA_DIR / f"processed_data_{timestamp}.csv"
     df.to_csv(output_path_csv, index=False)
 
-    logger.info(f"Data processing complete. Files saved to {PROCESSED_DATA_DIR}")
+    logger.info(f"Data processing complete. Saved {len(df)} records to {output_path_csv}")
 
 
-# Entry point:
 if __name__ == "__main__":
     main()

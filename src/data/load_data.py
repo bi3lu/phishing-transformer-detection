@@ -1,3 +1,8 @@
+"""Loading and preparation of phishing detection dataset splits.
+
+Provides utilities to load pre-split datasets and extract feature/label pairs.
+"""
+
 from typing import Tuple
 
 import pandas as pd

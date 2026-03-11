@@ -1,3 +1,8 @@
+"""Configuration module for phishing detection project.
+
+Defines project paths and global constants used across the codebase.
+"""
+
 from pathlib import Path
 
 # Paths:

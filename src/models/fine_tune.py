@@ -1,6 +1,13 @@
+"""Fine-tuning transformer models for phishing detection.
+
+Loads pre-trained transformer models, prepares tokenized datasets,
+and trains them with weighted loss to handle class imbalance.
+Saves trained models and metrics to disk and MLflow.
+"""
+
 import argparse
 import os
-from typing import Any, Dict
+from typing import Any, Dict, Tuple, Union
 
 import mlflow
 import pandas as pd
@@ -8,10 +15,12 @@ import torch
 import yaml
 from datasets import Dataset, DatasetDict
 from sklearn.metrics import accuracy_score, precision_recall_fscore_support
+from torch import nn
 from transformers import (
     AutoModelForSequenceClassification,
     AutoTokenizer,
     DataCollatorWithPadding,
+    PreTrainedModel,
     Trainer,
     TrainingArguments,
 )
@@ -135,14 +144,50 @@ def compute_metrics(pred: Any) -> Dict[str, Any]:
     return {"accuracy": acc, "f1": f1, "precision": precision, "recall": recall}
 
 
+class WeightedTrainer(Trainer):
+    def compute_loss(
+        self,
+        model: nn.Module,
+        inputs: Dict[str, Union[torch.Tensor, Any]],
+        return_outputs: bool = False,
+        num_items_in_batch: Union[torch.Tensor, int, None] = None,
+    ) -> Union[torch.Tensor, Tuple[torch.Tensor, Any]]:
+
+        if not isinstance(model, PreTrainedModel):
+            raise TypeError("Expected PreTrainedModel")
+
+        labels = inputs.get("labels")
+        if labels is None:
+            raise ValueError("Labels are missing from inputs")
+
+        outputs = model(**inputs)
+        logits = outputs["logits"]
+
+        num_labels = model.config.num_labels
+
+        weights = torch.tensor(
+            [1.0, 5.0],
+            device=logits.device,
+            dtype=logits.dtype,
+        )
+
+        loss_fct = nn.CrossEntropyLoss(weight=weights)
+
+        loss = loss_fct(
+            logits.view(-1, num_labels),
+            labels.view(-1).long(),
+        )
+
+        return (loss, outputs) if return_outputs else loss
+
+
 # Main:
 def main() -> None:
-    """Run the fine-tuning pipeline for a Transformer model.
+    """Fine-tune a transformer model for phishing detection.
 
-    Loads configuration parameters from 'params.yaml', initializes the
-    model and tokenizer, prepares datasets, and executes the training
-    loop using Hugging Face Trainer. Logs metrics and artifacts to
-    MLflow and saves the final model to disk.
+    Loads experiment configuration from params.yaml, prepares tokenized
+    datasets, initializes a transformer model, and trains it with weighted
+    loss on imbalanced data. Saves the trained model and logs metrics to MLflow.
     """
     parser = argparse.ArgumentParser(description="Fine-tune a transformer model.")
     parser.add_argument(
@@ -158,7 +203,6 @@ def main() -> None:
     with open(params_path, "r") as f:
         full_config = yaml.safe_load(f)
 
-    # Find the experiment config
     experiment_config = next(
         (exp for exp in full_config["experiments"] if exp["name"] == args.experiment_name),
         None,
@@ -175,8 +219,6 @@ def main() -> None:
 
     mlflow.set_experiment("phishing_transformer_finetune")
     mlflow.start_run(run_name=args.experiment_name)
-
-    # Log parameters:
     mlflow.log_params(experiment_config)
 
     logger.info(f"Loading tokenizer: {model_name}")
@@ -212,7 +254,8 @@ def main() -> None:
         report_to="mlflow",
     )
 
-    trainer = Trainer(
+    # Use WeightedTrainer instead of standard Trainer:
+    trainer = WeightedTrainer(
         model=model,
         args=training_args,
         train_dataset=tokenized_datasets["train"],
@@ -221,7 +264,7 @@ def main() -> None:
         compute_metrics=compute_metrics,
     )
 
-    logger.info(f"Starting training for experiment: {args.experiment_name}...")
+    logger.info(f"Starting weighted training for: {args.experiment_name}...")
     trainer.train()
 
     logger.info("Evaluating on test set...")

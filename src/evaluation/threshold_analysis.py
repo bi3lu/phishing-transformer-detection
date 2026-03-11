@@ -1,3 +1,9 @@
+"""Threshold optimization analysis for phishing detection.
+
+Analyzes model performance across different classification thresholds,
+calculates cost-based metrics, generates visualization plots, and provides
+threshold recommendations."""
+
 import os
 import pickle
 from datetime import datetime
@@ -88,9 +94,16 @@ def calculate_threshold_metrics(
     return pd.DataFrame(results)
 
 
-def load_predictions_sklearn(
-    model_path: Union[str, Path], X: pd.Series
-) -> NDArray[np.floating[Any]]:  # TODO: Add docstring
+def load_predictions_sklearn(model_path: Union[str, Path], X: pd.Series) -> NDArray[np.floating[Any]]:
+    """Load probabilities from a pickled scikit-learn model.
+
+    Args:
+        model_path: Path to the pickled model file.
+        X: Feature data (pandas Series) to generate predictions for.
+
+    Returns:
+        Array of predicted probabilities for the positive class.
+    """
     logger.info(f"Loading sklearn model from {model_path}...")
 
     with open(model_path, "rb") as f:
@@ -107,7 +120,20 @@ def load_predictions_transformer(
     batch_size: int = 16,
     max_length: int = 128,
     device: Optional[str] = None,
-) -> NDArray[np.floating[Any]]:  # TODO: Add docstring
+) -> NDArray[np.floating[Any]]:
+    """Load probabilities from a transformer model in batch mode.
+
+    Args:
+        model_path: Path to the transformer model directory.
+        texts: List of text samples to generate predictions for.
+        batch_size: Number of samples per batch. Defaults to 16.
+        max_length: Maximum token sequence length. Defaults to 128.
+        device: Device to run inference on ('cuda', 'mps', or 'cpu').
+            Auto-detected if None.
+
+    Returns:
+        Array of predicted probabilities for the positive class.
+    """
     logger.info(f"Loading transformer model from {model_path}...")
 
     if device is None:
@@ -139,7 +165,17 @@ def load_predictions_transformer(
     return np.array(all_probs, dtype=np.float64)
 
 
-def plot_metrics(df_results: pd.DataFrame, model_name: str, output_dir: Path) -> None:  # TODO: Add docstring
+def plot_metrics(df_results: pd.DataFrame, model_name: str, output_dir: Path) -> None:
+    """Generate and save performance metric plots across threshold values.
+
+    Creates three plots: precision/recall/F1 vs threshold, cost vs threshold,
+    and precision-recall curve. Saves plots as PNG files with timestamps.
+
+    Args:
+        df_results: DataFrame containing threshold analysis results.
+        model_name: Name of the model for plot titles and filenames.
+        output_dir: Directory to save plot PNG files.
+    """
     timestamp = datetime.now().strftime("%Y%m%d_%H%M%S")
 
     # 1. Precision-Recall vs Threshold:
@@ -195,6 +231,12 @@ def plot_metrics(df_results: pd.DataFrame, model_name: str, output_dir: Path) ->
 
 # Main:
 def main() -> None:
+    """Run threshold analysis across all available models.
+
+    Loads predictions for all models (baseline and transformers),
+    calculates metrics across threshold ranges, generates plots,
+    and generates threshold recommendations based on F1, cost, and precision.
+    """
     output_dir = BASE_DIR / "results" / "threshold_analysis"
     output_dir.mkdir(parents=True, exist_ok=True)
 

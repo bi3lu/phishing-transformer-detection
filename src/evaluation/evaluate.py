@@ -1,3 +1,10 @@
+"""Model evaluation on test data.
+
+Evaluates trained models (baseline or transformers) on the test dataset,
+supporting both single model and batch evaluation across multiple models.
+Logs metrics to MLflow for tracking.
+"""
+
 import argparse
 from typing import Tuple
 
