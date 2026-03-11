@@ -7,7 +7,7 @@ homoglyph substitutions, and brand keyword masking.
 import random
 import re
 
-from src.data.augment_config import HOMOGLYPHS, SHORTCUTS
+from src.data.augment.config import HOMOGLYPHS, SHORTCUTS
 
 
 class PhishingAugmenter:

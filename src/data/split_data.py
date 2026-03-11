@@ -18,7 +18,8 @@ from src.config import (
     SPLIT_DATA_DIR,
     TEXT_COL,
 )
-from src.data.augment_data import PhishingAugmenter
+from src.data.adversarial_augment.adversarial_generator import AdversarialAugmenter
+from src.data.augment.augment_data import PhishingAugmenter
 from src.features.extractor import PhishingFeatureExtractor
 from src.utils.logger import get_logger
 
@@ -110,9 +111,13 @@ def main() -> None:
         meta = parts[0]
         content = parts[1] if len(parts) > 1 else ""
 
-        # Apply augmentation only to training phishing samples:
+        # Apply adversarial augmentation to all phishing samples:
         if augment and is_phishing:
-            content = augmenter.augment(content)
+            if random.random() < 0.2:
+                content = AdversarialAugmenter.generate_hard_phish(content)
+
+            else:
+                content = augmenter.augment(content)
 
         # Extract features (always calculated to ensure extractor consistency):
         features = extractor.get_all_features(content)
