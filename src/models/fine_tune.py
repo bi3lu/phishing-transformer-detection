@@ -143,9 +143,13 @@ def compute_metrics(pred: Any) -> Dict[str, Any]:
     return {"accuracy": acc, "f1": f1, "precision": precision, "recall": recall}
 
 
-class WeightedTrainer(Trainer):  # type: ignore[misc]
+class WeightedTrainer(Trainer):
     def compute_loss(
-        self, model: nn.Module, inputs: Dict[str, Union[torch.Tensor, Any]], return_outputs: bool = False, **kwargs: Any
+        self,
+        model: nn.Module,
+        inputs: Dict[str, Union[torch.Tensor, Any]],
+        return_outputs: bool = False,
+        num_items_in_batch: Union[torch.Tensor, int, None] = None,
     ) -> Union[torch.Tensor, Tuple[torch.Tensor, Any]]:
         labels = inputs.get("labels")
 
@@ -153,10 +157,21 @@ class WeightedTrainer(Trainer):  # type: ignore[misc]
             raise ValueError("Labels are missing from inputs")
 
         outputs = model(**inputs)
-        logits = outputs.get("logits")
-        weights = torch.tensor([1.0, 5.0], device=model.device)
+        logits = outputs["logits"]
+        num_labels = self.model.config.num_labels
+
+        weights = torch.tensor(
+            [1.0, 5.0],
+            device=logits.device,
+            dtype=logits.dtype,
+        )
+
         loss_fct = nn.CrossEntropyLoss(weight=weights)
-        loss = loss_fct(logits.view(-1, self.model.config.num_labels), labels.view(-1).long())
+
+        loss = loss_fct(
+            logits.view(-1, num_labels),
+            labels.view(-1).long(),
+        )
 
         return (loss, outputs) if return_outputs else loss
 
