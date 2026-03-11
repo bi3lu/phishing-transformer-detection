@@ -126,10 +126,10 @@ class PhishingFeatureExtractor:
         return min(score, 5)
 
     def _get_financial_index(self, text: str, words: List[str]) -> int:
-        count = self._count_triggers(text, words)
-        currency_symbols = len(re.findall(r"(zł|\$|€|PLN|USD|eur)", text, re.IGNORECASE))
+        keyword_count = self._count_triggers(text, words)
+        money_patterns = len(re.findall(r"\d+[\.,]\d{2}\s?(?:PLN|zł|eur|usd|€|\$)", text, re.IGNORECASE))
 
-        return min(count + currency_symbols, 5)
+        return min(keyword_count + money_patterns, 5)
 
     def get_all_features(self, text: str) -> Dict[str, int]:
         """Extract all phishing-related features from text.

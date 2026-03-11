@@ -75,3 +75,26 @@ FINANCIAL_KEYWORDS: List[str] = [
     "debet",
 ]
 """"""
+
+MONEY_SENSITIVE_KEYWORDS: List[str] = [
+    "pln",
+    "eur",
+    "usd",
+    "kwota",
+    "suma",
+    "zadłużenie",
+    "niedopłata",
+    "nadpłata",
+    "podatek",
+    "vat",
+    "pit",
+    "egzekucja",
+    "komornik",
+    "rachunek",
+    "faktura",
+    "przelew",
+]
+""""""
+
+CURRENCY_SYMBOLS_REGEX = r"(zł|pln|usd|eur|€|\$|złotych)"
+""""""

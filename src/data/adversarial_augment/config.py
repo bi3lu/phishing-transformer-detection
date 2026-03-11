@@ -14,3 +14,5 @@ CALL_TO_ACTIONS: List[str] = [
     "Prosimy o podanie kodu autoryzacyjnego w odpowiedzi na ten e-mail.",
     "Środki można odblokować podając numer karty w wiadomości zwrotnej.",
 ]
+
+FINANCIAL_TRAPS: List[str] = ["Kwota do zapłaty:", "Odnotowano zaległość w wysokości", "Twoje saldo wynosi"]
