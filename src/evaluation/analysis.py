@@ -45,9 +45,7 @@ ALL_MODELS: List[Dict[str, str]] = [
 ]
 
 
-# ── Prediction helpers ──────────────────────────────────────────────
-
-
+# Helpers:
 def _predict_transformer(
     model_path: str,
     texts: List[str],
@@ -61,22 +59,22 @@ def _predict_transformer(
     model.eval()
 
     all_probs: List[float] = []
-    
+
     for i in tqdm(range(0, len(texts), batch_size), desc=f"Inference ({Path(model_path).name})"):
         batch_texts = texts[i : i + batch_size]
         inputs = tokenizer(batch_texts, padding=True, truncation=True, max_length=max_length, return_tensors="pt").to(
             device
         )
-        
+
         with torch.no_grad():
             outputs = model(**inputs)
             probs = torch.nn.functional.softmax(outputs.logits, dim=-1)
             all_probs.extend(probs[:, 1].cpu().numpy().tolist())
 
     del model, tokenizer
-    
+
     gc.collect()
-    
+
     if torch.backends.mps.is_available():
         torch.mps.empty_cache()
 
@@ -89,6 +87,7 @@ def _predict_sklearn(model_path: str, texts: pd.Series) -> NDArray[np.floating[A
     return np.asarray(probs, dtype=np.float64)
 
 
+# Main analysis:
 def get_all_predictions(
     texts: List[str],
     X_series: pd.Series,
@@ -104,23 +103,20 @@ def get_all_predictions(
     predictions: Dict[str, NDArray[np.floating[Any]]] = {}
     for m in models:
         model_path = str(SAVED_MODELS_DIR / m["name"])
-        
+
         if not Path(model_path).exists():
             logger.warning(f"Model not found: {model_path}, skipping.")
             continue
-        
+
         logger.info(f"Getting predictions from {m['name']}...")
-        
+
         if m["type"] == "transformer":
             predictions[m["name"]] = _predict_transformer(model_path, texts)
-            
+
         else:
             predictions[m["name"]] = _predict_sklearn(model_path, X_series)
-            
+
     return predictions
-
-
-# ── 1. Error Analysis ────────────────────────────────────────────────
 
 
 def error_analysis(
@@ -164,7 +160,7 @@ def error_analysis(
 
     # Per-model error summary:
     summary_rows = []
-    
+
     for name in predictions:
         pred_col = f"{name}_pred"
         correct_col = f"{name}_correct"
@@ -182,9 +178,6 @@ def error_analysis(
     return df
 
 
-# ── 2. Probability Distribution Comparison ──────────────────────────
-
-
 def probability_distribution(
     predictions: Dict[str, NDArray[np.floating[Any]]],
     y_true: NDArray[np.int_],
@@ -192,7 +185,7 @@ def probability_distribution(
     """Plot probability distribution histograms for each model, split by class."""
     n_models = len(predictions)
     fig, axes = plt.subplots(n_models, 1, figsize=(10, 4 * n_models), constrained_layout=True)
-    
+
     if n_models == 1:
         axes = [axes]
 
@@ -212,9 +205,6 @@ def probability_distribution(
     fig.savefig(output_path, dpi=150)
     plt.close(fig)
     logger.info(f"Probability distributions saved to {output_path}")
-
-
-# ── 3. McNemar Test ──────────────────────────────────────────────────
 
 
 def mcnemar_test(
@@ -238,7 +228,7 @@ def mcnemar_test(
     correct = {name: (preds[name] == y_true) for name in model_names}
 
     results = []
-    
+
     for i, name_a in enumerate(model_names):
         for name_b in model_names[i + 1 :]:
             # b = A wrong, B right; c = A right, B wrong
@@ -249,7 +239,7 @@ def mcnemar_test(
             if b + c == 0:
                 chi2 = 0.0
                 p_value = 1.0
-                
+
             else:
                 chi2 = (abs(b - c) - 1) ** 2 / (b + c)
                 p_value = 1 - chi2_dist.cdf(chi2, df=1)
@@ -271,11 +261,8 @@ def mcnemar_test(
     df.to_csv(output_path, index=False)
     logger.info(f"McNemar pairwise tests saved to {output_path}")
     logger.info(f"\n{df.to_string(index=False)}")
-    
+
     return df
-
-
-# ── 4. Ensemble Ablation Study ───────────────────────────────────────
 
 
 def ensemble_ablation(
@@ -319,13 +306,11 @@ def ensemble_ablation(
     df.to_csv(output_path, index=False)
     logger.info(f"Ensemble ablation ({len(df)} combinations) saved to {output_path}")
     logger.info(f"\nTop 10 combinations by F1:\n{df.head(10).to_string(index=False)}")
-    
+
     return df
 
 
-# ── Main ─────────────────────────────────────────────────────────────
-
-
+# Main:
 def main() -> None:
     """Run all analyses: error, probability distributions, McNemar, ablation."""
     logger.info("Loading test data...")
@@ -360,5 +345,6 @@ def main() -> None:
     logger.info("\nAll analyses complete.")
 
 
+# Entry point:
 if __name__ == "__main__":
     main()

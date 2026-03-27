@@ -107,7 +107,7 @@ def run_kfold(
         model = AutoModelForSequenceClassification.from_pretrained(model_name, num_labels=2)
 
         freeze_layers = int(experiment_config.get("freeze_layers", DEFAULT_FREEZE_LAYERS))
-        
+
         if freeze_layers > 0:
             freeze_lower_layers(model, num_layers_to_freeze=freeze_layers)
 
@@ -179,10 +179,10 @@ def run_kfold(
         import gc
 
         gc.collect()
-        
+
         if torch.backends.mps.is_available():
             torch.mps.empty_cache()
-            
+
         elif torch.cuda.is_available():
             torch.cuda.empty_cache()
 

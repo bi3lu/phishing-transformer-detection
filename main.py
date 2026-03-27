@@ -75,10 +75,11 @@ def step_finetune(experiments: List[str]) -> None:
     logger.info(f"STEP 4/9: Fine-tuning transformers: {experiments}")
     logger.info("=" * 60)
 
-    from src.models.fine_tune import main as finetune_main
-
     import gc
+
     import torch
+
+    from src.models.fine_tune import main as finetune_main
 
     for exp_name in experiments:
         logger.info(f"--- Starting experiment: {exp_name} ---")
@@ -88,10 +89,10 @@ def step_finetune(experiments: List[str]) -> None:
             finetune_main(experiment_name=exp_name)
             elapsed = time.time() - start
             logger.info(f"--- Experiment {exp_name} done ({elapsed:.0f}s) ---")
-            
+
         except Exception as e:
             logger.error(f"Experiment {exp_name} failed: {e}")
-            
+
         finally:
             # Free GPU/MPS memory between experiments:
             gc.collect()
@@ -141,6 +142,7 @@ def step_kfold(experiments: List[str]) -> None:
     logger.info("=" * 60)
 
     import gc
+
     import torch
 
     from src.models.kfold_cv import run_kfold
@@ -184,6 +186,7 @@ def get_experiment_names() -> List[str]:
     return [exp["name"] for exp in config["experiments"]]
 
 
+# Main:
 def main() -> None:
     parser = argparse.ArgumentParser(
         description="Run full phishing detection pipeline.",
@@ -282,5 +285,6 @@ Examples:
     logger.info("=" * 60)
 
 
+# Entry point
 if __name__ == "__main__":
     main()

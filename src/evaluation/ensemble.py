@@ -99,7 +99,7 @@ def ensemble_predict(
     """
     if ensemble_config is None:
         ensemble_config = DEFAULT_ENSEMBLE
-        
+
     if saved_models_dir is None:
         saved_models_dir = BASE_DIR / "saved_models"
 
@@ -120,10 +120,10 @@ def ensemble_predict(
 
         if model_type == "transformer":
             probs = _predict_transformer(model_path, texts)
-            
+
         elif model_type == "sklearn":
             probs = _predict_sklearn(model_path, X_series)
-            
+
         else:
             logger.error(f"Unknown model type: {model_type}")
             continue
