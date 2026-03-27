@@ -4,7 +4,7 @@ A comprehensive study comparing traditional machine learning baselines with fine
 
 ---
 
-**[Wersja polska ponizej / Polish version below](#wersja-polska)**
+**[Wersja polska poniżej / Polish version below](#wersja-polska)**
 
 ---
 
@@ -288,62 +288,62 @@ This project is licensed under the MIT License. See [LICENSE](LICENSE) for detai
 
 Copyright (c) 2026 Jakub Bielecki
 
----
+-----
 
 # Wersja polska
 
-# Wykrywanie phishingu z wykorzystaniem modeli transformer
+# Wykrywanie phishingu z wykorzystaniem modeli typu Transformer
 
-Kompleksowe badanie porownujace tradycyjne metody uczenia maszynowego z dostrojonymi modelami transformer w zadaniu wykrywania wiadomosci phishingowych w jezyku polskim. Projekt obejmuje ewaluacje szesciu podejsc klasyfikacyjnych, implementuje metode zespolowa (ensemble) z wazeniem oraz przeprowadza analize wyjasnialnosci z wykorzystaniem SHAP.
+Kompleksowe badanie porównujące tradycyjne metody uczenia maszynowego z dostrojonymi modelami typu Transformer w zadaniu wykrywania wiadomości phishingowych w języku polskim. Projekt obejmuje ewaluację sześciu podejść klasyfikacyjnych, implementację metody zespołowej (ensemble) z ważeniem oraz przeprowadzenie analizy wyjaśnialności z wykorzystaniem SHAP.
 
----
+-----
 
-## Spis tresci
+## Spis treści
 
-- [Opis projektu](#opis-projektu)
-- [Zbior danych](#zbior-danych)
-- [Modele](#modele)
-- [Struktura projektu](#struktura-projektu)
-- [Instalacja](#instalacja)
-- [Uruchomienie](#uruchomienie)
-- [Wyniki](#wyniki)
-- [Istotnosc statystyczna](#istotnosc-statystyczna)
-- [Badanie ablacyjne ensemble](#badanie-ablacyjne-ensemble)
-- [Wyjasnialnosc (XAI)](#wyjasnialnosc-xai)
-- [Licencja](#licencja)
+  - [Opis projektu](#opis-projektu)
+  - [Zbiór danych](#zbiór-danych)
+  - [Modele](#modele)
+  - [Struktura projektu](#struktura-projektu)
+  - [Instalacja](#instalacja)
+  - [Uruchomienie](#uruchomienie)
+  - [Wyniki](#wyniki)
+  - [Istotność statystyczna](#istotność-statystyczna)
+  - [Badanie ablacyjne ensemble](#badanie-ablacyjne-ensemble)
+  - [Wyjaśnialność (XAI)](#wyjaśnialność-xai)
+  - [Licencja](#licencja)
 
 ## Opis projektu
 
-Phishing pozostaje jednym z najczestszych zagrozen cyberbezpieczenstwa. Niniejszy projekt bada, czy modele jezykowe typu transformer, wstepnie wytrenowane na polskich korpusach tekstowych, moga przewyzszyc klasyczne metody bazujace na TF-IDF i regresji logistycznej w wykrywaniu phishingowych wiadomosci SMS i e-mail.
+Phishing pozostaje jednym z najczęstszych zagrożeń cyberbezpieczeństwa. Niniejszy projekt bada, czy modele językowe typu Transformer, wstępnie wytrenowane na polskich korpusach tekstowych, mogą przewyższyć klasyczne rozwiązania bazujące na TF-IDF i regresji logistycznej w wykrywaniu phishingowych wiadomości SMS i e-mail.
 
-Pipeline badawczy sklada sie z dziewieciu zautomatyzowanych etapow:
+Proces badawczy (pipeline) składa się z dziewięciu zautomatyzowanych etapów:
 
-1. Preprocessing i normalizacja danych
-2. Stratyfikowany podzial na zbiory treningowy/walidacyjny/testowy z ekstrakcja cech
-3. Trening modelu bazowego (TF-IDF + Regresja Logistyczna)
-4. Dostrajanie (fine-tuning) czterech architektur transformer
-5. Ewaluacja modeli na zbiorze testowym
-6. Optymalizacja progu decyzyjnego z analiza kosztowa
-7. Inferencja z wykorzystaniem wazonego ensemble
-8. Stratyfikowana K-krotna walidacja krzyzowa
-9. Analizy zaawansowane: analiza bledow, testy McNemara, kalibracja prawdopodobienstw, badanie ablacyjne
+1.  Przetwarzanie wstępne (preprocessing) i normalizacja danych
+2.  Stratyfikowany podział na zbiory treningowy/walidacyjny/testowy wraz z ekstrakcją cech
+3.  Trening modelu bazowego (baseline: TF-IDF + Regresja Logistyczna)
+4.  Dostrajanie (fine-tuning) czterech architektur typu Transformer
+5.  Ewaluacja modeli na wydzielonym zbiorze testowym
+6.  Optymalizacja progu decyzyjnego z uwzględnieniem analizy kosztowej
+7.  Inferencja z wykorzystaniem ważonego modelu zespołowego (ensemble)
+8.  Stratyfikowana K-krotna walidacja krzyżowa dla oceny wiarygodności
+9.  Analizy zaawansowane: analiza błędów, testy McNemara, kalibracja prawdopodobieństwa i badanie ablacyjne
 
-## Zbior danych
+## Zbiór danych
 
-Zbior danych liczy 3 983 wiadomosci w jezyku polskim (SMS i e-mail), wygenerowanych przy uzyciu duzych modeli jezykowych w celu symulacji realistycznych wiadomosci phishingowych i legitnych.
+Zbiór danych obejmuje 3 983 wiadomości w języku polskim (SMS i e-mail), wygenerowanych przy użyciu dużych modeli językowych (LLM) w celu symulacji realistycznej komunikacji phishingowej oraz autentycznej.
 
-| Wlasciwosc | Wartosc |
+| Właściwość | Wartość |
 |---|---|
-| Laczna liczba probek | 3 983 |
+| Łączna liczba próbek | 3 983 |
 | Phishing (klasa pozytywna) | 2 214 (55,6%) |
-| Wiadomosci legitne (klasa negatywna) | 1 769 (44,4%) |
-| Wiadomosci SMS | 2 033 |
-| Wiadomosci e-mail | 1 950 |
-| Podzial treningowy / walidacyjny / testowy | 2 788 / 597 / 598 |
+| Wiadomości autentyczne (klasa negatywna) | 1 769 (44,4%) |
+| Wiadomości SMS | 2 033 |
+| Wiadomości e-mail | 1 950 |
+| Podział treningowy / walidacyjny / testowy | 2 788 / 597 / 598 |
 
-**Zrodla danych wg generatora LLM:**
+**Źródła danych według generatora LLM:**
 
-| Zrodlo | Liczba probek |
+| Źródło | Liczba próbek |
 |---|---|
 | Gemini 3 | 3 600 |
 | Grok 4.1 | 200 |
@@ -352,43 +352,43 @@ Zbior danych liczy 3 983 wiadomosci w jezyku polskim (SMS i e-mail), wygenerowan
 | DeepSeek R1 | 21 |
 | Bielik v3.0 | 12 |
 
-Kazdy rekord zawiera ustrukturyzowane metadane: typ wiadomosci, tytul, tresc, marka nadawcy, kategoria tematyczna, poziom podejrzliwosci, wskaznik podobienstwa do LLM, styl jezykowy, technika phishingowa oraz etykieta binarna.
+Każdy rekord zawiera ustrukturyzowane metadane: typ wiadomości, tytuł, treść, marka nadawcy, kategoria tematyczna, poziom podejrzliwości, wskaźnik podobieństwa do LLM, styl językowy, technika phishingowa oraz etykieta binarna.
 
 ## Modele
 
 ### Model bazowy (baseline)
 
-- **TF-IDF + Regresja Logistyczna** z zakresem n-gramow (1, 3), 50 000 cech, zrownowazonym wazeniem klas.
+  - **TF-IDF + Regresja Logistyczna** z zakresem n-gramów (1, 3), limitem 50 000 cech oraz zrównoważonymi wagami klas.
 
 ### Transformery
 
-Wszystkie modele transformer dostrajano z nastepujaca wspolna konfiguracja:
+Wszystkie modele typu Transformer były dostrajane przy użyciu następującej wspólnej konfiguracji:
 
-| Parametr | Wartosc |
+| Parametr | Wartość |
 |---|---|
-| Maksymalna dlugosc sekwencji | 256 tokenow |
-| Rozmiar batcha | 4 |
+| Maksymalna długość sekwencji | 256 tokenów |
+| Rozmiar wsadu (batch size) | 4 |
 | Liczba epok | 10 |
-| Wspolczynnik uczenia | 2e-5 |
-| Scheduler LR | Cosine z rozgrzewka (ratio=0.1) |
-| Regularyzacja wag | 0.01 |
-| Akumulacja gradientow | 4 kroki |
-| Wczesne zatrzymanie | Cierpliwosc 3 epoki |
-| Wygladzanie etykiet | 0.1 |
+| Współczynnik uczenia (learning rate) | 2e-5 |
+| Scheduler LR | Cosine z rozgrzewką (ratio=0.1) |
+| Regularyzacja wag (weight decay) | 0.01 |
+| Akumulacja gradientów | 4 kroki |
+| Wczesne zatrzymanie (early stopping) | Cierpliwość 3 epoki |
+| Wygładzanie etykiet (label smoothing) | 0.1 |
 | Funkcja straty | CrossEntropyLoss z wagami klas |
-| Augmentacja danych | Perturbacje znakowe w locie + dropout tagow cech (30%) |
+| Augmentacja danych | Perturbacje znakowe w locie + dropout tagów cech (30%) |
 
-| Model | Pretrenowany checkpoint |
+| Model | Punkt startowy (checkpoint) |
 |---|---|
 | HerBERT | `allegro/herbert-base-cased` |
 | Polish RoBERTa v2 | `sdadas/polish-roberta-base-v2` |
 | XLM-RoBERTa | `FacebookAI/xlm-roberta-base` |
 | DistilBERT Multilingual | `distilbert-base-multilingual-cased` |
-| Fine-tuned BERT (HerBERT) | Wczesniej wytrenowany checkpoint HerBERT |
+| Fine-tuned BERT (HerBERT) | Wcześniej dostrojony checkpoint HerBERT |
 
-### Ensemble
+### Ensemble (Model zespołowy)
 
-Wazone usrednianie prawdopodobienstw z pieciu modeli:
+Ważone uśrednianie prawdopodobieństw predykcji z pięciu modeli według następującego rozkładu wag:
 
 | Komponent | Waga |
 |---|---|
@@ -402,44 +402,44 @@ Wazone usrednianie prawdopodobienstw z pieciu modeli:
 
 ```
 phishing-transformer-detection/
-|-- main.py                          # Orkiestrator pipeline (9 krokow)
-|-- params.yaml                      # Hiperparametry eksperymentow
-|-- pyproject.toml                   # Metadane projektu i zaleznosci
+|-- main.py                          # Koordynator procesu (9 etapów)
+|-- params.yaml                      # Hiperparametry eksperymentów
+|-- pyproject.toml                   # Metadane projektu i zależności
 |-- src/
-|   |-- config.py                    # Stale globalne (sciezki, nazwy kolumn)
+|   |-- config.py                    # Stałe globalne (ścieżki, nazwy kolumn)
 |   |-- data/
-|   |   |-- preprocess_data.py       # Preprocessing danych surowych
-|   |   |-- split_data.py            # Stratyfikowany podzial danych
-|   |   |-- load_data.py             # Narzedzia do ladowania danych
+|   |   |-- preprocess_data.py       # Przetwarzanie danych surowych
+|   |   |-- split_data.py            # Stratyfikowany podział danych
+|   |   |-- load_data.py             # Narzędzia do ładowania danych
 |   |   |-- augmented_dataset.py     # Augmentacja danych w locie
 |   |   |-- augment/                 # Skrypty augmentacji offline
 |   |-- models/
 |   |   |-- baseline.py              # TF-IDF + Regresja Logistyczna
-|   |   |-- fine_tune.py             # Fine-tuning transformerow (WeightedTrainer)
-|   |   |-- kfold_cv.py              # Stratyfikowana K-krotna walidacja krzyzowa
-|   |   |-- utils.py                 # Narzedzia do ladowania i ewaluacji modeli
+|   |   |-- fine_tune.py             # Dostrajanie transformerów (WeightedTrainer)
+|   |   |-- kfold_cv.py              # Stratyfikowana K-krotna walidacja krzyżowa
+|   |   |-- utils.py                 # Pomocnicze funkcje ładowania i ewaluacji
 |   |-- evaluation/
-|   |   |-- evaluate.py              # Ewaluacja modeli na zbiorze testowym
-|   |   |-- threshold_analysis.py    # Optymalizacja progu z analiza kosztowa
-|   |   |-- ensemble.py              # Wazona inferencja zespolowa
-|   |   |-- analysis.py             # Analiza bledow, McNemar, ablacja
-|   |   |-- explainer.py             # Wyjasnialnosc oparta na SHAP
+|   |   |-- evaluate.py              # Ewaluacja na zbiorze testowym
+|   |   |-- threshold_analysis.py    # Optymalizacja progu z analizą kosztową
+|   |   |-- ensemble.py              # Ważona inferencja zespołowa
+|   |   |-- analysis.py             # Analiza błędów, testy McNemara, ablacja
+|   |   |-- explainer.py             # Wyjaśnialność oparta na SHAP
 |   |-- features/
 |   |   |-- extractor.py             # Pipeline ekstrakcji cech
 |   |-- utils/
 |       |-- logger.py                # Konfiguracja logowania
 |-- notebooks/
-|   |-- xai_analysis.ipynb                          # Analiza SHAP
-|   |-- evaluate_baseline.ipynb                     # Ewaluacja baseline
-|   |-- evaluate_fine_tuned_bert.ipynb               # Ewaluacja transformerow
-|   |-- comprehesive_model_and_feature_auditor.ipynb # Audyt modeli
+|   |-- xai_analysis.ipynb                          # Analiza wyjaśnialności SHAP
+|   |-- evaluate_baseline.ipynb                     # Ewaluacja modelu bazowego
+|   |-- evaluate_fine_tuned_bert.ipynb               # Ewaluacja transformerów
+|   |-- comprehesive_model_and_feature_auditor.ipynb # Audyt modeli i cech
 |-- data/
-|   |-- raw/                         # Dane surowe wg zrodla LLM
-|   |-- processed/                   # Przetworzone CSV
-|   |-- split/                       # CSV treningowe/walidacyjne/testowe
+|   |-- raw/                         # Dane surowe według źródła LLM
+|   |-- processed/                   # Przetworzony plik CSV
+|   |-- split/                       # Pliki CSV po podziale
 |-- results/                         # Wyniki ewaluacji, wykresy, CSV
-|-- saved_models/                    # Checkpointy wytrenowanych modeli
-|-- mlruns/                          # Sledzenie eksperymentow MLflow
+|-- saved_models/                    # Wytrenowane wagi modeli
+|-- mlruns/                          # Śledzenie eksperymentów w MLflow
 ```
 
 ## Instalacja
@@ -450,59 +450,59 @@ phishing-transformer-detection/
 git clone https://github.com/jakubbielecki/phishing-transformer-detection.git
 cd phishing-transformer-detection
 
-# Przy uzyciu uv (zalecane):
+# Przy użyciu uv (zalecane):
 uv sync
 
-# Przy uzyciu pip:
+# Przy użyciu pip:
 pip install -e .
 ```
 
 ## Uruchomienie
 
-### Pelny pipeline
+### Pełny proces (pipeline)
 
 ```bash
 uv run python main.py
 ```
 
-### Selektywne uruchomienie
+### Uruchomienie selektywne
 
 ```bash
-# Pominiecie preprocessingu (juz wykonany):
+# Pominiecie przetwarzania danych (jeśli już wykonane):
 uv run python main.py --skip preprocess split
 
-# Fine-tuning tylko wybranych modeli:
+# Dostrajanie tylko konkretnych modeli:
 uv run python main.py --only finetune --experiments herbert-base polish-roberta-v2
 
-# Tylko ewaluacja i analizy:
+# Uruchomienie tylko ewaluacji i analiz:
 uv run python main.py --only evaluate threshold ensemble analysis
 
-# K-Fold walidacja krzyzowa dla jednego modelu:
+# Walidacja krzyżowa K-Fold dla pojedynczego modelu:
 uv run python main.py --only kfold --experiments herbert-base
 
-# Niestandardowy prog ensemble:
+# Niestandardowy próg dla modelu zespołowego:
 uv run python main.py --only ensemble --threshold 0.4
 ```
 
-### Dostepne kroki pipeline
+### Dostępne etapy procesu
 
-| Krok | Opis |
+| Etap | Opis |
 |---|---|
-| `preprocess` | Preprocessing danych surowych do ustrukturyzowanego CSV |
-| `split` | Stratyfikowany podzial z ekstrakcja cech |
-| `baseline` | Trening TF-IDF + Regresja Logistyczna |
-| `finetune` | Fine-tuning modeli transformer |
+| `preprocess` | Przetwarzanie surowych danych do ustrukturyzowanego formatu CSV |
+| `split` | Stratyfikowany podział na zbiory z ekstrakcją cech |
+| `baseline` | Trening modelu bazowego TF-IDF + Regresja Logistyczna |
+| `finetune` | Dostrajanie modeli typu Transformer |
 | `evaluate` | Ewaluacja wszystkich modeli na zbiorze testowym |
-| `threshold` | Analiza optymalizacji progu |
-| `ensemble` | Wazona inferencja zespolowa |
-| `kfold` | Stratyfikowana K-krotna walidacja krzyzowa |
-| `analysis` | Analiza bledow, testy McNemara, badanie ablacyjne |
+| `threshold` | Analiza optymalizacji progu decyzyjnego |
+| `ensemble` | Inferencja z wykorzystaniem ważonego modelu zespołowego |
+| `kfold` | Stratyfikowana K-krotna walidacja krzyżowa |
+| `analysis` | Analiza błędów, testy McNemara, badanie ablacyjne |
 
 ## Wyniki
 
-### Wydajnosc poszczegolnych modeli (zbior testowy, n=598)
+### Wydajność poszczególnych modeli (zbiór testowy, n=598)
 
-| Model | F1 | Precyzja | Czulosc | ROC-AUC | Bledy |
+| Model | F1 | Precyzja | Czułość | ROC-AUC | Błędy |
 |---|---|---|---|---|---|
 | Baseline (TF-IDF + LR) | 0,9743 | 0,9787 | 0,9699 | 0,9973 | 17 |
 | HerBERT | 0,8803 | 1,0000 | 0,7861 | 0,9315 | 5 |
@@ -511,15 +511,15 @@ uv run python main.py --only ensemble --threshold 0.4
 | Fine-tuned BERT | 0,9561 | 0,9605 | 0,9518 | 0,9906 | 16 |
 | DistilBERT Multilingual | 0,7319 | 0,6917 | 0,7771 | 0,7862 | 223 |
 
-### Wydajnosc ensemble
+### Wydajność modelu zespołowego (Ensemble)
 
-| Konfiguracja | F1 | Precyzja | Czulosc | ROC-AUC |
+| Konfiguracja | F1 | Precyzja | Czułość | ROC-AUC |
 |---|---|---|---|---|
-| 5-modelowy wazony ensemble (prog=0,35) | **0,9910** | 0,9910 | 0,9910 | 0,9996 |
+| 5-modelowy ważony ensemble (próg=0,35) | **0,9910** | 0,9910 | 0,9910 | 0,9996 |
 
-### Profil bledow
+### Profil błędów
 
-| Model | Laczne bledy | Falszywie pozytywne | Falszywie negatywne |
+| Model | Łączna liczba błędów | Fałszywie dodatnie (FP) | Fałszywie ujemne (FN) |
 |---|---|---|---|
 | HerBERT | 5 | 0 | 5 |
 | Polish RoBERTa v2 | 7 | 2 | 5 |
@@ -528,13 +528,13 @@ uv run python main.py --only ensemble --threshold 0.4
 | Baseline | 17 | 7 | 10 |
 | DistilBERT Multilingual | 223 | 59 | 164 |
 
-Kluczowa obserwacja: HerBERT i XLM-RoBERTa nie generuja falszywie pozytywnych wynikow, ale charakteryzuja sie nizsza czuloscia (klasyfikatory konserwatywne). Fine-tuned BERT prezentuje odwrotny wzorzec -- wysoka czulosc przy wiekszej liczbie falszywych alarmow. Ensemble rownowazy te komplementarne profile bledow.
+Kluczowa obserwacja: HerBERT i XLM-RoBERTa nie generują wyników fałszywie dodatnich (zero fałszywych alarmów), ale cechują się niższą czułością (klasyfikatory konserwatywne). Fine-tuned BERT wykazuje odwrotny wzorzec – wysoką czułość przy większej liczbie błędów FP. Model zespołowy skutecznie równoważy te komplementarne profile błędów.
 
-## Istotnosc statystyczna
+## Istotność statystyczna
 
-Parzyste testy McNemara (chi-kwadrat z korekcja ciaglosci, poziom istotnosci alfa=0,05):
+Parowe testy McNemara (chi-kwadrat z poprawką na ciągłość, poziom istotności alfa=0,05):
 
-| Para | chi2 | p-value | Istotna |
+| Para | chi2 | p-value | Istotność |
 |---|---|---|---|
 | Baseline vs. HerBERT | 6,05 | 0,0139 | Tak |
 | Baseline vs. Polish RoBERTa v2 | 4,05 | 0,0442 | Tak |
@@ -544,13 +544,13 @@ Parzyste testy McNemara (chi-kwadrat z korekcja ciaglosci, poziom istotnosci alf
 | HerBERT vs. Fine-tuned BERT | 5,26 | 0,0218 | Tak |
 | Polish RoBERTa v2 vs. XLM-RoBERTa | 3,50 | 0,0614 | Nie |
 
-Wyniki potwierdzaja, ze HerBERT i Polish RoBERTa v2 popelniaja statystycznie istotnie rozne bledy w porownaniu z baseline. XLM-RoBERTa i Fine-tuned BERT nie roznia sie istotnie od baseline pod wzgledem rozkladu bledow, pomimo odmiennych kompromisow precyzja-czulosc.
+Wyniki potwierdzają, że błędy popełniane przez modele HerBERT i Polish RoBERTa v2 różnią się statystycznie od błędów modelu bazowego. XLM-RoBERTa oraz Fine-tuned BERT nie wykazują istotnych różnic w rozkładzie błędów względem baseline, pomimo odmiennych kompromisów między precyzją a czułością.
 
 ## Badanie ablacyjne ensemble
 
-Przetestowano wszystkie 57 mozliwych kombinacji 2-6 modeli z rownymi wagami przy progu 0,35. Najlepsze 5 wynikow:
+Ewaluacji poddano wszystkie 57 możliwych kombinacji 2-6 modeli z równymi wagami przy progu 0,35. Oto 5 najlepszych wyników:
 
-| Kombinacja | F1 | Precyzja | Czulosc | ROC-AUC |
+| Kombinacja | F1 | Precyzja | Czułość | ROC-AUC |
 |---|---|---|---|---|
 | Baseline + HerBERT + XLM-RoBERTa + DistilBERT | 0,9955 | 1,0000 | 0,9910 | 0,9997 |
 | Baseline + XLM-RoBERTa | 0,9940 | 0,9970 | 0,9910 | 0,9997 |
@@ -558,22 +558,22 @@ Przetestowano wszystkie 57 mozliwych kombinacji 2-6 modeli z rownymi wagami przy
 | Baseline + Polish RoBERTa + XLM-RoBERTa + DistilBERT | 0,9925 | 0,9940 | 0,9910 | 0,9996 |
 | HerBERT + XLM-RoBERTa + DistilBERT | 0,9924 | 1,0000 | 0,9849 | 0,9969 |
 
-Godne uwagi jest, ze prosta kombinacja 2-modelowa Baseline + XLM-RoBERTa osiaga F1=0,9940, co dowodzi, ze roznorodnosc predykcji jest wazniejsza niz indywidualna sila modelu. Obecnosc slabszego DistilBERT w najlepszej kombinacji 4-modelowej dodatkowo potwierdza te zasade.
+Warto zauważyć, że prosta kombinacja dwóch modeli (Baseline + XLM-RoBERTa) osiąga wynik F1=0,9940. Dowodzi to, że różnorodność predykcji ma większe znaczenie niż siła pojedynczego modelu. Obecność słabszego modelu DistilBERT w najlepiej ocenianej kombinacji czteroelementowej dodatkowo potwierdza tę tezę.
 
-## Wyjasnialnosc (XAI)
+## Wyjaśnialność (XAI)
 
-Analiza SHAP (SHapley Additive exPlanations) zostala przeprowadzona z wykorzystaniem modelu HerBERT w celu identyfikacji najbardziej wplywowych tokenow w decyzjach klasyfikacyjnych dotyczacych phishingu.
+Analiza SHAP (SHapley Additive exPlanations) została przeprowadzona przy użyciu modelu HerBERT w celu zidentyfikowania tokenów o największym wpływie na decyzje klasyfikacyjne.
 
-![Waznosc cech SHAP -- HerBERT (top 20 tokenow)](assets/shap_feature_importance.png)
+![Ważność cech SHAP -- HerBERT (top 20 tokenów)](assets/shap_feature_importance.png)
 
-Najwazniejsze tokeny wskazujace na phishing obejmuja podslowa zwiazane z domenami (np. "fede", "ver"), wskazniki pilnosci ("sprawy", "dostawy") oraz terminy zwiazane z nagrodami ("nagrody", "win", "bon"). Analiza ujawnia, ze model skutecznie wychwytuje wzorce semantyczne charakterystyczne dla polskojezycznych kampanii phishingowych.
+Kluczowe tokeny wskazujące na phishing obejmują podsłowa związane z domenami (np. „fede", „ver"), wskaźniki pilności („sprawy", „dostawy") oraz terminy związane z potencjalnymi korzyściami („nagrody", „win", „bon"). Analiza wykazuje, że model skutecznie identyfikuje wzorce semantyczne charakterystyczne dla polskich kampanii phishingowych.
 
-Analiza rozkladu prawdopodobienstw pokazuje, ze HerBERT, Polish RoBERTa v2 i XLM-RoBERTa wykazuja niemal binarna kalibracje (prawdopodobienstwa skoncentrowane w okolicach 0 i 1), podczas gdy baseline generuje lagodniejszy rozklad oferujacy lepsza separowalnosc wynikow.
+Analiza rozkładu prawdopodobieństwa pokazuje, że HerBERT, Polish RoBERTa v2 i XLM-RoBERTa wykazują niemal binarną kalibrację (prawdopodobieństwa skupione wokół 0 i 1), podczas gdy model bazowy generuje łagodniejszy rozkład, oferujący lepszą separowalność wyników.
 
-![Rozklady prawdopodobienstw dla poszczegolnych modeli](assets/probability_distributions.png)
+![Rozkłady prawdopodobieństw dla poszczególnych modeli](assets/probability_distributions.png)
 
 ## Licencja
 
-Projekt jest udostepniony na licencji MIT. Szczegoly w pliku [LICENSE](LICENSE).
+Projekt jest udostępniony na licencji MIT. Szczegóły znajdują się w pliku [LICENSE](LICENSE).
 
 Copyright (c) 2026 Jakub Bielecki
