@@ -127,6 +127,10 @@ def main() -> None:
 
     df = pd.DataFrame(all_data)
 
+    # Normalize Type column ("Email" -> "E-mail"):
+    if "Type" in df.columns:
+        df["Type"] = df["Type"].replace({"Email": "E-mail"})
+
     PROCESSED_DATA_DIR.mkdir(parents=True, exist_ok=True)
 
     timestamp = datetime.now().strftime("%Y%m%d_%H%M%S")

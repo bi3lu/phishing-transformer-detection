@@ -11,28 +11,32 @@ baseline:
 experiments:
   - name: "herbert-base"
     model_name: "allegro/herbert-base-cased"
-    max_length: 512
-    batch_size: 8
-    epochs: 3
+    max_length: 256
+    batch_size: 4
+    epochs: 10
     learning_rate: 2.0e-5
+    freeze_layers: 0
 
   - name: "polish-roberta-v2"
     model_name: "sdadas/polish-roberta-base-v2"
-    max_length: 512
-    batch_size: 8
-    epochs: 3
+    max_length: 256
+    batch_size: 4
+    epochs: 10
     learning_rate: 2.0e-5
+    freeze_layers: 0
 
   - name: "xlm-roberta-base"
     model_name: "FacebookAI/xlm-roberta-base"
-    max_length: 512
-    batch_size: 8
-    epochs: 3
+    max_length: 256
+    batch_size: 4
+    epochs: 10
     learning_rate: 2.0e-5
+    freeze_layers: 0
 
   - name: "distilbert-multilingual"
     model_name: "distilbert-base-multilingual-cased"
-    max_length: 512
-    batch_size: 8
-    epochs: 3
+    max_length: 256
+    batch_size: 4
+    epochs: 10
     learning_rate: 2.0e-5
+    freeze_layers: 0
