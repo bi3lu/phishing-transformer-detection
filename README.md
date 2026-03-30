@@ -132,17 +132,17 @@ phishing-transformer-detection/
 |   |   |-- evaluate.py              # Model evaluation on test set
 |   |   |-- threshold_analysis.py    # Threshold optimization with cost analysis
 |   |   |-- ensemble.py              # Weighted ensemble inference
-|   |   |-- analysis.py             # Error analysis, McNemar, ablation study
+|   |   |-- analysis.py              # Error analysis, McNemar, ablation study
 |   |   |-- explainer.py             # SHAP-based explainability
 |   |-- features/
 |   |   |-- extractor.py             # Feature extraction pipeline
 |   |-- utils/
 |       |-- logger.py                # Logging configuration
 |-- notebooks/
-|   |-- xai_analysis.ipynb                          # SHAP explainability analysis
-|   |-- evaluate_baseline.ipynb                     # Baseline evaluation
-|   |-- evaluate_fine_tuned_bert.ipynb               # Transformer evaluation
-|   |-- comprehesive_model_and_feature_auditor.ipynb # Model auditing
+|   |-- xai_analysis.ipynb                            # SHAP explainability analysis
+|   |-- evaluate_baseline.ipynb                       # Baseline evaluation
+|   |-- evaluate_fine_tuned_bert.ipynb                # Transformer evaluation
+|   |-- comprehesive_model_and_feature_auditor.ipynb  # Model auditing
 |-- data/
 |   |-- raw/                         # Raw data per LLM source
 |   |-- processed/                   # Preprocessed CSV
@@ -330,7 +330,7 @@ Proces badawczy (pipeline) składa się z dziewięciu zautomatyzowanych etapów:
 
 ## Zbiór danych
 
-Zbiór danych obejmuje 3 983 wiadomości w języku polskim (SMS i e-mail), wygenerowanych przy użyciu dużych modeli językowych (LLM) w celu symulacji realistycznej komunikacji phishingowej oraz autentycznej.
+Zbiór danych obejmuje 3 983 wiadomości w języku polskim (SMS i e-mail), wygenerowanych przy użyciu dużych modeli językowych (LLM) w celu symulacji realistycznej oraz autentycznej komunikacji phishingowej.
 
 | Właściwość | Wartość |
 |---|---|
@@ -422,17 +422,17 @@ phishing-transformer-detection/
 |   |   |-- evaluate.py              # Ewaluacja na zbiorze testowym
 |   |   |-- threshold_analysis.py    # Optymalizacja progu z analizą kosztową
 |   |   |-- ensemble.py              # Ważona inferencja zespołowa
-|   |   |-- analysis.py             # Analiza błędów, testy McNemara, ablacja
+|   |   |-- analysis.py              # Analiza błędów, testy McNemara, ablacja
 |   |   |-- explainer.py             # Wyjaśnialność oparta na SHAP
 |   |-- features/
 |   |   |-- extractor.py             # Pipeline ekstrakcji cech
 |   |-- utils/
 |       |-- logger.py                # Konfiguracja logowania
 |-- notebooks/
-|   |-- xai_analysis.ipynb                          # Analiza wyjaśnialności SHAP
-|   |-- evaluate_baseline.ipynb                     # Ewaluacja modelu bazowego
-|   |-- evaluate_fine_tuned_bert.ipynb               # Ewaluacja transformerów
-|   |-- comprehesive_model_and_feature_auditor.ipynb # Audyt modeli i cech
+|   |-- xai_analysis.ipynb                            # Analiza wyjaśnialności SHAP
+|   |-- evaluate_baseline.ipynb                       # Ewaluacja modelu bazowego
+|   |-- evaluate_fine_tuned_bert.ipynb                # Ewaluacja transformerów
+|   |-- comprehesive_model_and_feature_auditor.ipynb  # Audyt modeli i cech
 |-- data/
 |   |-- raw/                         # Dane surowe według źródła LLM
 |   |-- processed/                   # Przetworzony plik CSV
