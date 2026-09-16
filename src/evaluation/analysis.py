@@ -4,16 +4,13 @@ Includes: error analysis, probability distribution comparison,
 McNemar statistical significance tests, and ensemble ablation study.
 """
 
-import gc
 import itertools
+import json
 from pathlib import Path
 from typing import Any, Dict, List, Optional, Tuple
 
-import joblib
-import matplotlib.pyplot as plt
 import numpy as np
 import pandas as pd
-import torch
 from numpy.typing import NDArray
 from sklearn.metrics import (
     classification_report,
@@ -23,107 +20,45 @@ from sklearn.metrics import (
     recall_score,
     roc_auc_score,
 )
-from tqdm import tqdm
-from transformers import AutoModelForSequenceClassification, AutoTokenizer
 
-from src.config import BASE_DIR, LABEL_COL, TEXT_COL
+from src.config import BASE_DIR, RESULTS_DIR, SAVED_MODELS_DIR, TEMPLATE_GROUP_COL
 from src.data.load_data import load_split, prepare_xy
+from src.evaluation.calibration import load_calibrator, resolve_project_path
+from src.evaluation.inference import discover_models, predict_model
+from src.evaluation.threshold_analysis import calculate_threshold_metrics, select_f1_threshold
 from src.utils.logger import get_logger
 
 logger = get_logger(__name__)
-
-SAVED_MODELS_DIR = BASE_DIR / "saved_models"
-RESULTS_DIR = BASE_DIR / "results"
-
-ALL_MODELS: List[Dict[str, str]] = [
-    {"name": "baseline", "type": "sklearn"},
-    {"name": "herbert-base", "type": "transformer"},
-    {"name": "polish-roberta-v2", "type": "transformer"},
-    {"name": "xlm-roberta-base", "type": "transformer"},
-    {"name": "fine_tuned_bert", "type": "transformer"},
-    {"name": "distilbert-multilingual", "type": "transformer"},
-]
-
-
-# Helpers:
-def _predict_transformer(
-    model_path: str,
-    texts: List[str],
-    batch_size: int = 16,
-    max_length: int = 256,
-) -> NDArray[np.floating[Any]]:
-    device = "cuda" if torch.cuda.is_available() else "mps" if torch.backends.mps.is_available() else "cpu"
-    tokenizer = AutoTokenizer.from_pretrained(model_path)
-    model = AutoModelForSequenceClassification.from_pretrained(model_path)
-    model.to(device)
-    model.eval()
-
-    all_probs: List[float] = []
-
-    for i in tqdm(range(0, len(texts), batch_size), desc=f"Inference ({Path(model_path).name})"):
-        batch_texts = texts[i : i + batch_size]
-        inputs = tokenizer(batch_texts, padding=True, truncation=True, max_length=max_length, return_tensors="pt").to(
-            device
-        )
-
-        with torch.no_grad():
-            outputs = model(**inputs)
-            probs = torch.nn.functional.softmax(outputs.logits, dim=-1)
-            all_probs.extend(probs[:, 1].cpu().numpy().tolist())
-
-    del model, tokenizer
-
-    gc.collect()
-
-    if torch.backends.mps.is_available():
-        torch.mps.empty_cache()
-
-    return np.array(all_probs, dtype=np.float64)
-
-
-def _predict_sklearn(model_path: str, texts: pd.Series) -> NDArray[np.floating[Any]]:
-    pipeline = joblib.load(Path(model_path) / "pipeline.joblib")
-    probs = pipeline.predict_proba(texts)[:, 1]
-    return np.asarray(probs, dtype=np.float64)
 
 
 # Main analysis:
 def get_all_predictions(
     texts: List[str],
     X_series: pd.Series,
-    models: Optional[List[Dict[str, str]]] = None,
-) -> Dict[str, NDArray[np.floating[Any]]]:
+    models: Optional[List[Dict[str, Any]]] = None,
+) -> Dict[str, NDArray[np.float64]]:
     """Get predictions from all available models.
 
     Returns dict mapping model name -> probability array.
     """
     if models is None:
-        models = ALL_MODELS
+        models = discover_models()
 
-    predictions: Dict[str, NDArray[np.floating[Any]]] = {}
+    predictions: Dict[str, NDArray[np.float64]] = {}
+
     for m in models:
-        model_path = str(SAVED_MODELS_DIR / m["name"])
-
-        if not Path(model_path).exists():
-            logger.warning(f"Model not found: {model_path}, skipping.")
-            continue
-
         logger.info(f"Getting predictions from {m['name']}...")
-
-        if m["type"] == "transformer":
-            predictions[m["name"]] = _predict_transformer(model_path, texts)
-
-        else:
-            predictions[m["name"]] = _predict_sklearn(model_path, X_series)
+        predictions[str(m["name"])] = predict_model(m, X_series)
 
     return predictions
 
 
 def error_analysis(
-    predictions: Dict[str, NDArray[np.floating[Any]]],
+    predictions: Dict[str, NDArray[np.float64]],
     y_true: NDArray[np.int_],
     texts: List[str],
     threshold: float = 0.5,
+    thresholds: Optional[Dict[str, float]] = None,
 ) -> pd.DataFrame:
     """Analyze misclassified samples across all models.
 
@@ -135,7 +70,8 @@ def error_analysis(
 
     for name, probs in predictions.items():
         df[f"{name}_prob"] = probs
-        df[f"{name}_pred"] = (probs >= threshold).astype(int)
+        model_threshold = (thresholds or {}).get(name, threshold)
+        df[f"{name}_pred"] = (probs >= model_threshold).astype(int)
         df[f"{name}_correct"] = df[f"{name}_pred"] == df["true_label"]
 
     correct_cols = [c for c in df.columns if c.endswith("_correct")]
@@ -179,10 +115,13 @@ def error_analysis(
 
 
 def probability_distribution(
-    predictions: Dict[str, NDArray[np.floating[Any]]],
+    predictions: Dict[str, NDArray[np.float64]],
     y_true: NDArray[np.int_],
+    thresholds: Optional[Dict[str, float]] = None,
 ) -> None:
-    """Plot probability distribution histograms for each model, split by class."""
+    """Plot descriptive calibrated-probability distributions by class."""
+    import matplotlib.pyplot as plt
+
     n_models = len(predictions)
     fig, axes = plt.subplots(n_models, 1, figsize=(10, 4 * n_models), constrained_layout=True)
 
@@ -195,7 +134,13 @@ def probability_distribution(
 
         ax.hist(probs[mask_legit], bins=50, alpha=0.6, label="Legitimate", color="green", density=True)
         ax.hist(probs[mask_phish], bins=50, alpha=0.6, label="Phishing", color="red", density=True)
-        ax.axvline(x=0.5, color="black", linestyle="--", label="Threshold=0.5")
+        model_threshold = (thresholds or {}).get(name, 0.5)
+        ax.axvline(
+            x=model_threshold,
+            color="black",
+            linestyle="--",
+            label=f"Frozen validation threshold={model_threshold:.2f}",
+        )
         ax.set_title(f"{name} — Probability Distribution")
         ax.set_xlabel("P(phishing)")
         ax.set_ylabel("Density")
@@ -207,27 +152,46 @@ def probability_distribution(
     logger.info(f"Probability distributions saved to {output_path}")
 
 
+def _holm_adjust(p_values: List[float]) -> List[float]:
+    """Return Holm family-wise-error adjusted p-values."""
+    count = len(p_values)
+    adjusted = [1.0] * count
+    running_max = 0.0
+
+    for rank, index in enumerate(sorted(range(count), key=lambda item: p_values[item])):
+        candidate = min(1.0, (count - rank) * p_values[index])
+        running_max = max(running_max, candidate)
+        adjusted[index] = running_max
+
+    return adjusted
+
+
 def mcnemar_test(
-    predictions: Dict[str, NDArray[np.floating[Any]]],
+    predictions: Dict[str, NDArray[np.float64]],
     y_true: NDArray[np.int_],
+    groups: NDArray[np.str_],
     threshold: float = 0.5,
+    thresholds: Optional[Dict[str, float]] = None,
+    alpha: float = 0.05,
 ) -> pd.DataFrame:
-    """Run pairwise McNemar tests between all model pairs.
-
-    McNemar test checks if two classifiers have statistically significantly
-    different error rates. Uses the chi-squared approximation (with
-    continuity correction) for speed and simplicity.
-
-    Returns DataFrame with model_a, model_b, b (A wrong & B right),
-    c (A right & B wrong), chi2, p_value, significant (p < 0.05).
-    """
-    from scipy.stats import chi2 as chi2_dist
+    """Run exact pairwise McNemar tests on independent template families."""
+    from scipy.stats import binomtest
 
     model_names = list(predictions.keys())
-    preds = {name: (probs >= threshold).astype(int) for name, probs in predictions.items()}
-    correct = {name: (preds[name] == y_true) for name in model_names}
+    group_values = np.asarray(groups, dtype=str)
 
-    results = []
+    if not all(len(values) == len(y_true) == len(group_values) for values in predictions.values()):
+        raise ValueError("Predictions, labels, and groups must have equal lengths")
+
+    frame = pd.DataFrame({"group": group_values})
+
+    for name, probabilities in predictions.items():
+        frame[name] = (probabilities >= (thresholds or {}).get(name, threshold)).astype(int) == y_true
+
+    grouped = frame.groupby("group", sort=True)[model_names].all()
+    correct = {name: grouped[name].to_numpy(dtype=bool) for name in model_names}
+
+    results: List[Dict[str, Any]] = []
 
     for i, name_a in enumerate(model_names):
         for name_b in model_names[i + 1 :]:
@@ -235,14 +199,10 @@ def mcnemar_test(
             b = int(((~correct[name_a]) & correct[name_b]).sum())
             c = int((correct[name_a] & (~correct[name_b])).sum())
 
-            # McNemar chi-squared with continuity correction:
-            if b + c == 0:
-                chi2 = 0.0
-                p_value = 1.0
-
-            else:
-                chi2 = (abs(b - c) - 1) ** 2 / (b + c)
-                p_value = 1 - chi2_dist.cdf(chi2, df=1)
+            discordant = b + c
+            p_value = (
+                float(binomtest(min(b, c), n=discordant, p=0.5, alternative="two-sided").pvalue) if discordant else 1.0
+            )
 
             results.append(
                 {
@@ -250,13 +210,21 @@ def mcnemar_test(
                     "model_b": name_b,
                     "b_a_wrong_b_right": b,
                     "c_a_right_b_wrong": c,
-                    "chi2": round(chi2, 4),
-                    "p_value": round(p_value, 6),
-                    "significant": p_value < 0.05,
+                    "discordant_template_groups": discordant,
+                    "n_template_groups": len(grouped),
+                    "p_value_exact": p_value,
+                    "analysis_unit": "Template_Group_all_variants_correct",
                 }
             )
 
     df = pd.DataFrame(results)
+
+    if not df.empty:
+        df["p_value_holm"] = _holm_adjust(df["p_value_exact"].astype(float).tolist())
+        df["reject_holm"] = df["p_value_holm"] <= alpha
+        df["alpha_familywise"] = alpha
+        df["correction"] = "Holm"
+
     output_path = RESULTS_DIR / "mcnemar_tests.csv"
     df.to_csv(output_path, index=False)
     logger.info(f"McNemar pairwise tests saved to {output_path}")
@@ -265,15 +233,52 @@ def mcnemar_test(
     return df
 
 
+def _load_frozen_selection() -> Dict[str, Any]:
+    path = RESULTS_DIR / "threshold_selection" / "thresholds.json"
+
+    if not path.exists():
+        raise FileNotFoundError(f"Missing frozen threshold/calibration configuration: {path}")
+
+    with path.open("r", encoding="utf-8") as handle:
+        payload: Dict[str, Any] = json.load(handle)
+
+    if payload.get("selection_predictions") != "group_disjoint_calibration_oof":
+        raise ValueError("Analysis requires group-disjoint OOF calibrated threshold selection")
+
+    return payload
+
+
+def _calibrate_predictions(
+    predictions: Dict[str, NDArray[np.float64]], frozen: Dict[str, Any]
+) -> Dict[str, NDArray[np.float64]]:
+    calibrated: Dict[str, NDArray[np.float64]] = {}
+
+    for name, probabilities in predictions.items():
+        model_config = frozen.get("models", {}).get(name)
+
+        if model_config is None:
+            raise ValueError(f"Missing frozen calibration for {name}")
+
+        calibrated[name] = load_calibrator(dict(model_config["calibrator"])).predict(probabilities)
+
+    return calibrated
+
+
+def _load_validation_oof_predictions(
+    model_names: List[str], validation_df: pd.DataFrame, frozen: Dict[str, Any]
+) -> Dict[str, NDArray[np.float64]]:
+    from src.evaluation.ensemble import load_oof_validation_predictions
+
+    return load_oof_validation_predictions([{"name": name} for name in model_names], validation_df, frozen)
+
+
 def ensemble_ablation(
-    predictions: Dict[str, NDArray[np.floating[Any]]],
+    predictions: Dict[str, NDArray[np.float64]],
     y_true: NDArray[np.int_],
-    threshold: float = 0.35,
 ) -> pd.DataFrame:
     """Test all 2+ model combinations to find the best ensemble.
 
-    Uses equal weights for simplicity. Reports F1, precision, recall,
-    ROC-AUC for each combination.
+    Uses equal weights and selects each threshold on validation data only.
     """
     model_names = list(predictions.keys())
     results = []
@@ -282,29 +287,26 @@ def ensemble_ablation(
         for combo in itertools.combinations(model_names, size):
             # Equal-weight averaging:
             avg_probs = np.mean([predictions[name] for name in combo], axis=0)
-            preds = (avg_probs >= threshold).astype(int)
-
-            f1 = f1_score(y_true, preds)
-            precision = precision_score(y_true, preds)
-            recall = recall_score(y_true, preds)
+            selected = select_f1_threshold(calculate_threshold_metrics(y_true, avg_probs))
             auc = roc_auc_score(y_true, avg_probs)
 
             results.append(
                 {
                     "models": " + ".join(combo),
                     "n_models": size,
-                    "f1": round(f1, 4),
-                    "precision": round(precision, 4),
-                    "recall": round(recall, 4),
+                    "threshold": round(float(selected["threshold"]), 4),
+                    "f1": round(float(selected["f1"]), 4),
+                    "precision": round(float(selected["precision"]), 4),
+                    "recall": round(float(selected["recall"]), 4),
                     "roc_auc": round(auc, 4),
                 }
             )
 
     df = pd.DataFrame(results).sort_values("f1", ascending=False)
 
-    output_path = RESULTS_DIR / "ensemble_ablation.csv"
+    output_path = RESULTS_DIR / "validation_ensemble_ablation.csv"
     df.to_csv(output_path, index=False)
-    logger.info(f"Ensemble ablation ({len(df)} combinations) saved to {output_path}")
+    logger.info(f"Validation-only ensemble ablation ({len(df)} combinations) saved to {output_path}")
     logger.info(f"\nTop 10 combinations by F1:\n{df.head(10).to_string(index=False)}")
 
     return df
@@ -312,39 +314,35 @@ def ensemble_ablation(
 
 # Main:
 def main() -> None:
-    """Run all analyses: error, probability distributions, McNemar, ablation."""
-    logger.info("Loading test data...")
-    df_test = load_split("test")
-    X_test, y_test = prepare_xy(df_test)
-    texts = X_test.tolist()
-    y_arr = y_test.values
+    """Analyze cached, verified final predictions including the ensemble."""
+    from src.evaluation.evaluate import load_final_predictions
 
-    logger.info("Collecting predictions from all models...")
-    predictions = get_all_predictions(texts, X_test)
+    frame = load_final_predictions()
+    predictions = {}
+    thresholds = {}
+    reference = None
 
-    logger.info("\n" + "=" * 60)
-    logger.info("ERROR ANALYSIS")
-    logger.info("=" * 60)
-    error_analysis(predictions, y_arr, texts)
+    for name, rows in frame.groupby("model", sort=True):
+        rows = rows.sort_values("Record_ID")
+        predictions[str(name)] = rows.probability.to_numpy(dtype=float)
+        thresholds[str(name)] = float(rows.threshold.iloc[0])
+        reference = rows
 
-    logger.info("\n" + "=" * 60)
-    logger.info("PROBABILITY DISTRIBUTIONS")
-    logger.info("=" * 60)
-    probability_distribution(predictions, y_arr)
+    assert reference is not None
 
-    logger.info("\n" + "=" * 60)
-    logger.info("McNEMAR STATISTICAL SIGNIFICANCE TESTS")
-    logger.info("=" * 60)
-    mcnemar_test(predictions, y_arr)
+    labels = reference.Is_Phishing.to_numpy(dtype=int)
+    errors = error_analysis(predictions, labels, reference.Text.tolist(), thresholds=thresholds)
 
-    logger.info("\n" + "=" * 60)
-    logger.info("ENSEMBLE ABLATION STUDY")
-    logger.info("=" * 60)
-    ensemble_ablation(predictions, y_arr)
-
-    logger.info("\nAll analyses complete.")
+    # error_analysis preserves the original position in the sorted output index:
+    errors["Record_ID"] = reference.Record_ID.to_numpy()[errors.index.to_numpy()]
+    errors.to_csv(RESULTS_DIR / "error_analysis.csv", index=False)
+    probability_distribution(predictions, labels, thresholds=thresholds)
+    mcnemar_test(predictions, labels, reference.Template_Group.to_numpy(dtype=str), thresholds=thresholds)
+    validation = load_split("val")
+    frozen = _load_frozen_selection()
+    oof = _load_validation_oof_predictions(list(frozen["models"]), validation, frozen)
+    ensemble_ablation(oof, validation.Is_Phishing.to_numpy(dtype=int))
 
 
-# Entry point:
 if __name__ == "__main__":
     main()
