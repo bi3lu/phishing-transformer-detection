@@ -1,6 +1,6 @@
 # Wykrywanie phishingu w języku polskim z wykorzystaniem transformerów i danych syntetycznych
 
-Repozytorium zawiera implementację badania realizowanego w ramach pracy magisterskiej.
+Repozytorium zawiera implementację badania nad wykrywaniem phishingu na danych syntetycznych.
 Celem jest ocena modeli transformerowych w binarnej klasyfikacji polskojęzycznych
 wiadomości syntetycznych jako phishing lub wiadomość prawidłowa, ze szczególnym
 uwzględnieniem generalizacji między źródłami generowania danych.
@@ -116,7 +116,7 @@ Nie są to zamienne miary.
 
 ## Wyniki: seed 42
 
-Zakończono przebieg `thesis_v2_macos27/seed-42`, obejmujący 60 foldów CV
+Zakończono przebieg dla seeda 42, obejmujący 60 foldów CV
 oraz ocenę pięciu konfiguracji na 335 wiadomościach testowych.
 Poniżej podano F1 klasy phishing w procentach.
 
@@ -165,7 +165,7 @@ Polecenia należy wykonywać z katalogu głównego repozytorium. Nazwa przebiegu
 identyfikuje konkretny kod, parametry i środowisko.
 
 ```bash
-export PHISHING_RUN_ID=thesis_v2_macos27
+export PHISHING_RUN_ID=phishing_v2_macos27
 export PHISHING_SEED=42
 export TOKENIZERS_PARALLELISM=false
 
