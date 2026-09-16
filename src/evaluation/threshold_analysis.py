@@ -1,351 +1,278 @@
-"""Threshold optimization analysis for phishing detection.
+"""Decision-threshold selection performed exclusively on validation data."""
 
-Analyzes model performance across different classification thresholds,
-calculates cost-based metrics, generates visualization plots, and provides
-threshold recommendations."""
-
-import os
-import pickle
-from datetime import datetime
+import json
 from pathlib import Path
-from typing import Any, Dict, List, Optional, Union
+from typing import Any, Dict, Optional
 
-import matplotlib.pyplot as plt
 import numpy as np
 import pandas as pd
-import torch
+import yaml
 from numpy.typing import NDArray
-from sklearn.metrics import (
-    confusion_matrix,
-    f1_score,
-    precision_score,
-    recall_score,
-)
-from tqdm import tqdm
-from transformers import (
-    AutoModelForSequenceClassification,
-    AutoTokenizer,
-)
+from sklearn.metrics import confusion_matrix, f1_score, precision_score, recall_score
 
-from src.config import BASE_DIR
+from src.config import BASE_DIR, DEFAULT_MAX_LENGTH, LABEL_COL, RESULTS_DIR, TEMPLATE_GROUP_COL
 from src.data.load_data import load_split, prepare_xy
+from src.evaluation.calibration import (
+    CALIBRATION_METHOD,
+    calibration_metrics,
+    cross_fitted_calibration,
+    plot_reliability_diagram,
+    reliability_table,
+    save_calibrator,
+)
+from src.evaluation.inference import discover_models, predict_model, predict_transformer
 from src.utils.logger import get_logger
 
 logger = get_logger(__name__)
+
+
+def load_predictions_transformer(
+    model_path: str,
+    texts: list[str],
+    batch_size: int = 16,
+    max_length: int = DEFAULT_MAX_LENGTH,
+    device: Optional[str] = None,
+) -> NDArray[np.float64]:
+    return predict_transformer(Path(model_path), texts, batch_size, max_length, device)
 
 
 def calculate_threshold_metrics(
     y_true: NDArray[np.int_],
     y_probs: NDArray[np.floating[Any]],
     thresholds: Optional[NDArray[np.floating[Any]]] = None,
-    fp_cost: float = 1.0,
-    fn_cost: float = 20.0,
 ) -> pd.DataFrame:
-    """
-    Calculate metrics for a range of thresholds.
-
-    Args:
-        y_true: True labels (0 or 1).
-        y_probs: Predicted probabilities for the positive class (1).
-        thresholds: Array of thresholds to evaluate. If None, uses np.linspace(0.05, 0.95, 19).
-        fp_cost: Cost of a False Positive.
-        fn_cost: Cost of a False Negative.
-
-    Returns:
-        pd.DataFrame containing metrics for each threshold.
-    """
+    """Calculate observed validation metrics for candidate thresholds."""
     if thresholds is None:
-        thresholds = np.linspace(0.05, 0.95, 19)  # 0.05 step
+        unique = np.unique(np.asarray(y_probs, dtype=float))
 
-    results = []
+        if unique.size == 0 or not np.isfinite(unique).all() or unique.min() < 0 or unique.max() > 1:
+            raise ValueError("Probabilities must be finite and within [0, 1]")
 
-    for thr in thresholds:
-        y_pred = (y_probs >= thr).astype(int)
+        thresholds = np.unique(np.concatenate(([0.0, 0.5], unique, np.nextafter(unique, np.inf))))
 
-        # Calculate confusion matrix components:
-        tn, fp, fn, tp = confusion_matrix(y_true, y_pred, labels=[0, 1]).ravel()
+    rows = []
 
-        # Calculate metrics:
-        precision = precision_score(y_true, y_pred, zero_division=0)
-        recall = recall_score(y_true, y_pred, zero_division=0)
-        f1 = f1_score(y_true, y_pred, zero_division=0)
-
-        # False positive rate:
-        fpr = fp / (fp + tn) if (fp + tn) > 0 else 0.0
-
-        # Business cost:
-        cost = (fp * fp_cost) + (fn * fn_cost)
-
-        results.append(
+    for threshold in thresholds:
+        predictions = (y_probs >= threshold).astype(int)
+        tn, fp, fn, tp = confusion_matrix(y_true, predictions, labels=[0, 1]).ravel()
+        rows.append(
             {
-                "threshold": thr,
-                "precision": precision,
-                "recall": recall,
-                "f1": f1,
-                "fpr": fpr,
-                "tp": tp,
-                "fp": fp,
-                "tn": tn,
-                "fn": fn,
-                "cost": cost,
+                "threshold": float(threshold),
+                "precision": precision_score(y_true, predictions, zero_division=0),
+                "recall": recall_score(y_true, predictions, zero_division=0),
+                "f1": f1_score(y_true, predictions, zero_division=0),
+                "fpr": fp / (fp + tn) if fp + tn else 0.0,
+                "fnr": fn / (fn + tp) if fn + tp else 0.0,
+                "tpr": tp / (tp + fn) if tp + fn else 0.0,
+                "tnr": tn / (tn + fp) if tn + fp else 0.0,
+                "tp": int(tp),
+                "fp": int(fp),
+                "tn": int(tn),
+                "fn": int(fn),
             }
         )
+    return pd.DataFrame(rows)
 
-    return pd.DataFrame(results)
 
+def calculate_deployment_scenarios(metrics: pd.DataFrame, scenarios: list[Dict[str, Any]]) -> pd.DataFrame:
+    """Project precision and expected cost under explicit sensitivity scenarios.
 
-def load_predictions_sklearn(model_path: Union[str, Path], X: pd.Series) -> NDArray[np.floating[Any]]:
-    """Load probabilities from a pickled scikit-learn model.
-
-    Args:
-        model_path: Path to the pickled model file.
-        X: Feature data (pandas Series) to generate predictions for.
-
-    Returns:
-        Array of predicted probabilities for the positive class.
+    These rows are descriptive and never participate in canonical threshold
+    selection. Costs are relative units, not empirically estimated currency.
     """
-    logger.info(f"Loading sklearn model from {model_path}...")
+    rows = []
+    for scenario in scenarios:
+        prevalence = float(scenario["prevalence"])
+        fp_cost = float(scenario["fp_cost"])
+        fn_cost = float(scenario["fn_cost"])
 
-    with open(model_path, "rb") as f:
-        model = pickle.load(f)
+        if not 0.0 < prevalence < 1.0:
+            raise ValueError(f"Scenario prevalence must be between 0 and 1: {scenario}")
 
-    probs = model.predict_proba(X)[:, 1]
+        if fp_cost < 0.0 or fn_cost < 0.0:
+            raise ValueError(f"Scenario costs must be non-negative: {scenario}")
 
-    return np.asarray(probs, dtype=np.float64)
+        for _, metric in metrics.iterrows():
+            denominator = prevalence * metric["tpr"] + (1.0 - prevalence) * metric["fpr"]
+            deployment_precision = prevalence * metric["tpr"] / denominator if denominator else 0.0
+            expected_cost = (1.0 - prevalence) * metric["fpr"] * fp_cost + prevalence * metric["fnr"] * fn_cost
+            rows.append(
+                {
+                    "scenario": str(scenario["name"]),
+                    "assumption_status": "illustrative_sensitivity_not_empirically_estimated",
+                    "threshold": float(metric["threshold"]),
+                    "assumed_prevalence": prevalence,
+                    "fp_cost_relative": fp_cost,
+                    "fn_cost_relative": fn_cost,
+                    "deployment_precision": float(deployment_precision),
+                    "expected_cost_per_message": float(expected_cost),
+                    "tpr_from_validation": float(metric["tpr"]),
+                    "fpr_from_validation": float(metric["fpr"]),
+                }
+            )
 
-
-def load_predictions_transformer(
-    model_path: Union[str, Path],
-    texts: List[str],
-    batch_size: int = 16,
-    max_length: int = 128,
-    device: Optional[str] = None,
-) -> NDArray[np.floating[Any]]:
-    """Load probabilities from a transformer model in batch mode.
-
-    Args:
-        model_path: Path to the transformer model directory.
-        texts: List of text samples to generate predictions for.
-        batch_size: Number of samples per batch. Defaults to 16.
-        max_length: Maximum token sequence length. Defaults to 128.
-        device: Device to run inference on ('cuda', 'mps', or 'cpu').
-            Auto-detected if None.
-
-    Returns:
-        Array of predicted probabilities for the positive class.
-    """
-    logger.info(f"Loading transformer model from {model_path}...")
-
-    if device is None:
-        device = "cuda" if torch.cuda.is_available() else "mps" if torch.backends.mps.is_available() else "cpu"
-
-    tokenizer = AutoTokenizer.from_pretrained(model_path)
-    model = AutoModelForSequenceClassification.from_pretrained(model_path)
-    model.to(device)
-    model.eval()
-
-    all_probs: List[float] = []
-
-    for i in tqdm(range(0, len(texts), batch_size), desc="Inference"):
-        batch_texts = texts[i : i + batch_size]
-        inputs = tokenizer(
-            batch_texts,
-            padding=True,
-            truncation=True,
-            max_length=max_length,
-            return_tensors="pt",
-        ).to(device)
-
-        with torch.no_grad():
-            outputs = model(**inputs)
-            probs = torch.nn.functional.softmax(outputs.logits, dim=-1)
-            class_1_probs = probs[:, 1].cpu().numpy().astype(float)
-            all_probs.extend([float(x) for x in class_1_probs])
-
-    return np.array(all_probs, dtype=np.float64)
+    return pd.DataFrame(rows)
 
 
-def plot_metrics(df_results: pd.DataFrame, model_name: str, output_dir: Path) -> None:
-    """Generate and save performance metric plots across threshold values.
+def select_f1_threshold(metrics: pd.DataFrame) -> pd.Series:
+    """Select validation F1 optimum with a deterministic conservative tie-break."""
+    if metrics.empty:
+        raise ValueError("Cannot select a threshold from an empty metric table")
 
-    Creates three plots: precision/recall/F1 vs threshold, cost vs threshold,
-    and precision-recall curve. Saves plots as PNG files with timestamps.
+    ranked = metrics.assign(distance_from_default=(metrics["threshold"] - 0.5).abs()).sort_values(
+        ["f1", "distance_from_default", "threshold"], ascending=[False, True, True]
+    )
 
-    Args:
-        df_results: DataFrame containing threshold analysis results.
-        model_name: Name of the model for plot titles and filenames.
-        output_dir: Directory to save plot PNG files.
-    """
-    timestamp = datetime.now().strftime("%Y%m%d_%H%M%S")
+    return ranked.iloc[0]
 
-    # 1. Precision-Recall vs Threshold:
+
+def plot_validation_metrics(metrics: pd.DataFrame, model_name: str, output_dir: Path) -> None:
+    """Save a plot explicitly labelled as validation-only selection."""
+    import matplotlib.pyplot as plt
+
     plt.style.use("seaborn-v0_8-whitegrid")
+    fig, axis = plt.subplots(figsize=(10, 6))
 
-    plt.figure(figsize=(10, 6))
-    plt.plot(df_results["threshold"], df_results["precision"], label="Precision", marker=".")
+    for metric in ("precision", "recall", "f1"):
+        axis.plot(metrics["threshold"], metrics[metric], label=metric.capitalize())
 
-    plt.plot(df_results["threshold"], df_results["recall"], label="Recall", marker=".")
-    plt.plot(
-        df_results["threshold"],
-        df_results["f1"],
-        label="F1 Score",
-        marker=".",
-        linestyle="--",
-    )
-
-    plt.xlabel("Threshold")
-    plt.ylabel("Score")
-    plt.title(f"Precision, Recall, F1 vs Threshold - {model_name}")
-    plt.legend()
-    plt.grid(True)
-    plt.savefig(output_dir / f"pr_recall_f1_{model_name}_{timestamp}.png")
-    plt.close()
-
-    # 2. Cost vs Threshold:
-    plt.figure(figsize=(10, 6))
-    plt.plot(
-        df_results["threshold"],
-        df_results["cost"],
-        label="Cost",
-        color="red",
-        marker="o",
-    )
-    plt.xlabel("Threshold")
-    plt.ylabel("Total Cost")
-    plt.title(f"Cost vs Threshold - {model_name}")
-    plt.legend()
-    plt.grid(True)
-    plt.savefig(output_dir / f"cost_curve_{model_name}_{timestamp}.png")
-    plt.close()
-
-    # 3. Precision-Recall Curve:
-    plt.figure(figsize=(10, 6))
-    plt.plot(df_results["recall"], df_results["precision"], marker=".")
-    plt.xlabel("Recall")
-    plt.ylabel("Precision")
-    plt.title(f"Precision-Recall Curve - {model_name}")
-    plt.grid(True)
-    plt.savefig(output_dir / f"pr_curve_{model_name}_{timestamp}.png")
-    plt.close()
+    axis.set(xlabel="Threshold", ylabel="Score", title=f"Validation threshold selection — {model_name}")
+    axis.legend()
+    fig.savefig(output_dir / f"validation_threshold_{model_name}.png", dpi=150, bbox_inches="tight")
+    plt.close(fig)
 
 
-# Main:
 def main() -> None:
-    """Run threshold analysis across all available models.
+    """Select and freeze one threshold per model without reading test.csv."""
+    from src.utils.artifacts import bind_run, file_sha256
 
-    Loads predictions for all models (baseline and transformers),
-    calculates metrics across threshold ranges, generates plots,
-    and generates threshold recommendations based on F1, cost, and precision.
-    """
-    output_dir = BASE_DIR / "results" / "threshold_analysis"
+    bind_run()
+    output_dir = RESULTS_DIR / "threshold_selection"
     output_dir.mkdir(parents=True, exist_ok=True)
+    validation_df = load_split("val")
+    x_validation, y_validation = prepare_xy(validation_df)
 
-    # Load Test Data:
-    logger.info("Loading test data...")
-    df_test = load_split("test")
-    X_test, y_test = prepare_xy(df_test)
+    if TEMPLATE_GROUP_COL not in validation_df.columns:
+        raise ValueError(f"Validation data is missing {TEMPLATE_GROUP_COL}")
 
-    # Baseline:
-    models_config: List[Dict[str, Any]] = [
-        {
-            "name": "Baseline_LR",
-            "type": "sklearn",
-            "path": BASE_DIR / "mlruns/1/models/m-10b0ac281d4c40629b89914e7f92dbb0/artifacts/model.pkl",
-        }
-    ]
+    with (BASE_DIR / "params.yaml").open("r", encoding="utf-8") as handle:
+        protocol = yaml.safe_load(handle).get("research_protocol", {})
 
-    # Fine-tunded transformers:
-    saved_models_dir = BASE_DIR / "saved_models"
+    calibration_config = protocol.get("calibration", {})
 
-    if saved_models_dir.exists():
-        for model_dir in saved_models_dir.iterdir():
-            if model_dir.is_dir() and (model_dir / "config.json").exists():
-                models_config.append({"name": model_dir.name, "type": "transformer", "path": model_dir})
+    if calibration_config.get("method") != CALIBRATION_METHOD:
+        raise ValueError(f"Canonical calibration method must be {CALIBRATION_METHOD}")
 
-    summary_metrics = []
+    calibration_folds = int(calibration_config.get("folds", 5))
+    ece_bins = int(calibration_config.get("ece_bins", 10))
+    deployment_scenarios = list(protocol.get("deployment_scenarios", []))
 
-    for config in models_config:
-        model_name = str(config["name"])
-        model_path = Path(str(config["path"]))
-        model_type = str(config["type"])
+    if not deployment_scenarios:
+        raise ValueError("At least one preregistered deployment sensitivity scenario is required")
 
-        if not os.path.exists(model_path):
-            logger.warning(f"Model path not found: {model_path}. Skipping {model_name}.")
-            continue
+    models = discover_models()
 
-        logger.info(f"Processing {model_name}...")
+    if not models:
+        raise RuntimeError("No complete registered models are available for threshold selection")
 
-        # Get predictions:
-        if model_type == "sklearn":
-            y_probs = load_predictions_sklearn(model_path, X_test)
+    selections: Dict[str, Any] = {
+        "selection_split": "validation",
+        "selection_predictions": "group_disjoint_calibration_oof",
+        "objective": "max_f1",
+        "max_length": DEFAULT_MAX_LENGTH,
+        "calibration": {
+            "method": CALIBRATION_METHOD,
+            "folds": calibration_folds,
+            "ece_bins": ece_bins,
+            "fit_split": "validation",
+        },
+        "deployment_scenarios_are_descriptive_only": True,
+        "models": {},
+    }
 
-        elif model_type == "transformer":
-            y_probs = load_predictions_transformer(model_path, X_test.tolist())
+    calibration_rows = []
 
-        else:
-            logger.error(f"Unknown model type: {model_type}")
-            continue
-
-        # Calculate metrics:
-        df_results = calculate_threshold_metrics(y_test.to_numpy(), y_probs)
-
-        # Save full results
-        timestamp = datetime.now().strftime("%Y%m%d_%H%M%S")
-        csv_path = output_dir / f"threshold_analysis_{model_name}_{timestamp}.csv"
-        df_results.to_csv(csv_path, index=False)
-        logger.info(f"Saved threshold analysis to {csv_path}")
-
-        # Plotting:
-        plot_metrics(df_results, model_name, output_dir)
-
-        # Select specific thresholds for report:
-
-        # 1. Best F1:
-        best_f1_idx = df_results["f1"].idxmax()
-        best_f1_row = df_results.loc[best_f1_idx]
-
-        # 2. Lowest Cost:
-        min_cost_idx = df_results["cost"].idxmin()
-        min_cost_row = df_results.loc[min_cost_idx]
-
-        # 3. High Precision:
-        low_fpr_rows = df_results[df_results["fpr"] < 0.01]
-        if not low_fpr_rows.empty:
-            high_prec_row = low_fpr_rows.sort_values("recall", ascending=False).iloc[0]
-
-        else:
-            high_prec_row = df_results.sort_values("fpr").iloc[0]
-
-        # 4. Default 0.5:
-        default_idx = (df_results["threshold"] - 0.5).abs().idxmin()
-        default_row = df_results.loc[default_idx]
-
-        # Print report:
-        print(f"\nMODEL: {model_name}")
-        print(
-            f"Best F1 (Thr={best_f1_row['threshold']:.2f}): F1={best_f1_row['f1']:.4f}, Cost={best_f1_row['cost']:.1f}"
+    for model in models:
+        name = str(model["name"])
+        logger.info(f"Selecting threshold for {name} on validation data...")
+        raw_probabilities = predict_model(model, x_validation)
+        calibrated_probabilities, calibrator, fold_ids = cross_fitted_calibration(
+            raw_probabilities,
+            y_validation.to_numpy(),
+            validation_df[TEMPLATE_GROUP_COL].astype(str).to_numpy(),
+            n_splits=calibration_folds,
         )
-        print(
-            f"Min Cost (Thr={min_cost_row['threshold']:.2f}): Cost={min_cost_row['cost']:.1f}, F1={min_cost_row['f1']:.4f}"
-        )
-        print(
-            f"High Precision (Thr={high_prec_row['threshold']:.2f}): Precision={high_prec_row['precision']:.4f}, FPR={high_prec_row['fpr']:.4f}, Recall={high_prec_row['recall']:.4f}"
-        )
-        print(
-            f"Default 0.5 (Thr={default_row['threshold']:.2f}): F1={default_row['f1']:.4f}, Cost={default_row['cost']:.1f}"
-        )
+        metrics = calculate_threshold_metrics(y_validation.to_numpy(), calibrated_probabilities)
+        selected = select_f1_threshold(metrics)
+        metrics.to_csv(output_dir / f"validation_thresholds_{name}.csv", index=False)
+        scenario_table = calculate_deployment_scenarios(metrics, deployment_scenarios)
+        scenario_table.to_csv(output_dir / f"validation_deployment_scenarios_{name}.csv", index=False)
 
-        # Collect for summary:
-        summary_metrics.append(
+        raw_calibration = calibration_metrics(y_validation.to_numpy(), raw_probabilities, n_bins=ece_bins)
+        oof_calibration = calibration_metrics(y_validation.to_numpy(), calibrated_probabilities, n_bins=ece_bins)
+        raw_reliability = reliability_table(y_validation.to_numpy(), raw_probabilities, n_bins=ece_bins).assign(
+            model=name, probability_type="raw"
+        )
+        calibrated_reliability = reliability_table(
+            y_validation.to_numpy(), calibrated_probabilities, n_bins=ece_bins
+        ).assign(model=name, probability_type="calibrated_oof")
+        pd.concat([raw_reliability, calibrated_reliability], ignore_index=True).to_csv(
+            output_dir / f"validation_reliability_{name}.csv", index=False
+        )
+        plot_reliability_diagram(
+            y_validation.to_numpy(),
+            raw_probabilities,
+            calibrated_probabilities,
+            name,
+            output_dir / f"validation_reliability_{name}.svg",
+            n_bins=ece_bins,
+        )
+        calibrator_metadata = save_calibrator(
+            calibrator,
+            output_dir / "calibrators" / f"{name}.joblib",
+            name,
+            calibration_folds,
+        )
+        probability_path = output_dir / f"validation_oof_probabilities_{name}.csv"
+        pd.DataFrame(
             {
-                "model": model_name,
-                "best_f1": best_f1_row["f1"],
-                "min_cost": min_cost_row["cost"],
-                "high_prec_f1": high_prec_row["f1"],
+                "Record_ID": validation_df["Record_ID"],
+                "row_position": np.arange(len(validation_df)),
+                TEMPLATE_GROUP_COL: validation_df[TEMPLATE_GROUP_COL].astype(str),
+                LABEL_COL: y_validation.to_numpy(),
+                "calibration_fold": fold_ids,
+                "raw_probability": raw_probabilities,
+                "calibrated_oof_probability": calibrated_probabilities,
             }
+        ).to_csv(probability_path, index=False)
+        calibration_rows.extend(
+            [
+                {"model": name, "probability_type": "raw", **raw_calibration},
+                {"model": name, "probability_type": "calibrated_oof", **oof_calibration},
+            ]
         )
+        selections["models"][name] = {
+            "threshold": float(selected["threshold"]),
+            "validation_f1": float(selected["f1"]),
+            "validation_precision": float(selected["precision"]),
+            "validation_recall": float(selected["recall"]),
+            "validation_raw_brier": raw_calibration["brier_score"],
+            "validation_raw_ece": raw_calibration["ece"],
+            "validation_oof_calibrated_brier": oof_calibration["brier_score"],
+            "validation_oof_calibrated_ece": oof_calibration["ece"],
+            "calibrator": calibrator_metadata,
+            "validation_oof_probabilities_sha256": file_sha256(probability_path),
+            "validation_oof_probabilities_path": str(probability_path.resolve().relative_to(BASE_DIR.resolve())),
+        }
+        logger.info(f"Frozen validation threshold for {name}: {selected['threshold']:.2f}")
+
+    pd.DataFrame(calibration_rows).to_csv(output_dir / "validation_calibration_metrics.csv", index=False)
+
+    with (output_dir / "thresholds.json").open("w", encoding="utf-8") as handle:
+        json.dump(selections, handle, indent=2)
+
+    logger.info("Threshold selection complete. Test data was not loaded.")
 
 
-# Entry point:
 if __name__ == "__main__":
     main()
