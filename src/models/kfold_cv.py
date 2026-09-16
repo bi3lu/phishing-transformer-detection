@@ -1,231 +1,225 @@
-"""K-Fold cross-validation for transformer phishing detection models.
+"""Resumable raw-model robustness CV; test is never a selection input.
 
-Runs stratified K-Fold CV to produce more reliable performance estimates
-on the small dataset (~2800 training samples).  Each fold trains a fresh
-model, evaluates on the held-out split, and reports aggregated metrics.
+Every model is fitted on all outer-training rows (after source-template purge).
+Transformer epochs are chosen inside that training set, then weights are reset
+for the full refit. This evaluates raw models at 0.5, not calibrated deployment.
 """
 
 import argparse
-from typing import Any, Dict, List
+import json
+from pathlib import Path
+from typing import Any
 
 import numpy as np
 import pandas as pd
 import torch
 import yaml
-from sklearn.metrics import accuracy_score, precision_recall_fscore_support, roc_auc_score
-from sklearn.model_selection import StratifiedKFold
-from torch import nn
-from transformers import (
-    AutoModelForSequenceClassification,
-    AutoTokenizer,
-    DataCollatorWithPadding,
-    TrainingArguments,
+
+from src.config import (
+    BASE_DIR,
+    LABEL_COL,
+    PROTOCOL_VERSION,
+    RANDOM_STATE,
+    RESULTS_DIR,
+    SOURCE_COL,
+    TEMPLATE_GROUP_COL,
+    TEXT_COL,
 )
-
-from src.config import BASE_DIR, LABEL_COL, SPLIT_DATA_DIR, TEXT_COL
-from src.data.augmented_dataset import AugmentedPhishingDataset
-from src.models.fine_tune import (
-    DEFAULT_FREEZE_LAYERS,
-    DEFAULT_LABEL_SMOOTHING,
-    WeightedTrainer,
-    compute_metrics,
-    freeze_lower_layers,
-    get_device,
-    prepare_dataset,
+from src.data.cv_folds import SOURCE_HOLDOUT_PROTOCOL, TEMPLATE_GROUP_PROTOCOL, build_cv_folds, outer_training_mask
+from src.data.load_data import load_split
+from src.evaluation.uncertainty import (
+    binary_classification_metrics,
+    grouped_bootstrap_confidence_intervals,
+    template_group_binomial_confidence_intervals,
 )
-from src.utils.logger import get_logger
+from src.models.baseline import build_baseline_pipeline
+from src.models.fine_tune import prepare_dataset, select_epoch, train_phase
+from src.models.provenance import current_split_manifest
+from src.models.runtime import release_memory
+from src.utils.artifacts import atomic_json, bind_run, file_sha256, identity, stage_status
 
-logger = get_logger(__name__)
+CV_PROTOCOL_VERSION = PROTOCOL_VERSION
 
 
-def run_kfold(
-    experiment_name: str,
-    n_splits: int = 5,
-) -> pd.DataFrame:
-    """Run stratified K-Fold cross-validation for a single experiment.
+def load_cv_data() -> pd.DataFrame:
+    return pd.concat([load_split(s).assign(CV_Origin_Split=s) for s in ("train", "val")], ignore_index=True)
 
-    Args:
-        experiment_name: Name of the experiment from params.yaml.
-        n_splits: Number of CV folds.
 
-    Returns:
-        DataFrame with per-fold and mean/std metrics.
-    """
-    params_path = BASE_DIR / "params.yaml"
+def run_kfold(experiment_name: str, n_splits: int = 5, protocol: str = TEMPLATE_GROUP_PROTOCOL) -> pd.DataFrame:
+    bind_run()
+    config = yaml.safe_load((BASE_DIR / "params.yaml").read_text())
+    cv_config = config["research_protocol"]["cross_validation"]
+    experiment = next((e for e in config["experiments"] if e["name"] == experiment_name), None)
 
-    with open(params_path, "r") as f:
-        full_config = yaml.safe_load(f)
+    if experiment_name != "baseline" and experiment is None:
+        raise ValueError(f"Unknown experiment {experiment_name}")
 
-    experiment_config = next(
-        (exp for exp in full_config["experiments"] if exp["name"] == experiment_name),
-        None,
-    )
+    if n_splits != cv_config["folds"]:
+        raise ValueError("Use the registered number of folds")
 
-    if experiment_config is None:
-        raise ValueError(f"Experiment '{experiment_name}' not found in params.yaml")
-
-    model_name = experiment_config["model_name"]
-    max_length = experiment_config["max_length"]
-    batch_size = experiment_config["batch_size"]
-    epochs = experiment_config["epochs"]
-    learning_rate = float(experiment_config["learning_rate"])
-
-    # Load full training + validation data for CV:
-    train_df = pd.read_csv(SPLIT_DATA_DIR / "train.csv")
-    val_df = pd.read_csv(SPLIT_DATA_DIR / "val.csv")
-    full_df = pd.concat([train_df, val_df], ignore_index=True)
-
-    texts = full_df[TEXT_COL].astype(str).values
-    labels = full_df[LABEL_COL].map({False: 0, True: 1}).astype(int).values
-
-    skf = StratifiedKFold(n_splits=n_splits, shuffle=True, random_state=42)
-    device = get_device()
-
-    fold_results: List[Dict[str, Any]] = []
-
-    for fold_idx, (train_idx, val_idx) in enumerate(skf.split(texts, labels)):
-        logger.info(f"=== Fold {fold_idx + 1}/{n_splits} ===")
-
-        # Prepare fold data:
-        fold_train_texts = texts[train_idx].tolist()
-        fold_train_labels = labels[train_idx].tolist()
-        fold_val_df = full_df.iloc[val_idx].copy()
-
-        # On-the-fly augmented training dataset:
-        train_dataset = AugmentedPhishingDataset(
-            texts=fold_train_texts,
-            labels=fold_train_labels,
-            tokenizer=AutoTokenizer.from_pretrained(model_name),
-            max_length=max_length,
-            augment=True,
-        )
-
-        tokenizer = AutoTokenizer.from_pretrained(model_name)
-        val_dataset = prepare_dataset(fold_val_df, tokenizer, max_length)
-
-        # Fresh model for each fold:
-        model = AutoModelForSequenceClassification.from_pretrained(model_name, num_labels=2)
-
-        freeze_layers = int(experiment_config.get("freeze_layers", DEFAULT_FREEZE_LAYERS))
-
-        if freeze_layers > 0:
-            freeze_lower_layers(model, num_layers_to_freeze=freeze_layers)
-
-        model.to(device)
-
-        # Class weights for this fold:
-        fold_label_counts = pd.Series(fold_train_labels).value_counts().sort_index()
-        fold_total = len(fold_train_labels)
-        class_weights = torch.tensor([fold_total / (2 * fold_label_counts[c]) for c in sorted(fold_label_counts.index)])
-
-        data_collator = DataCollatorWithPadding(tokenizer=tokenizer)
-
-        training_args = TrainingArguments(
-            output_dir=f"./results/kfold_{experiment_name}/fold_{fold_idx}",
-            eval_strategy="epoch",
-            save_strategy="epoch",
-            learning_rate=learning_rate,
-            per_device_train_batch_size=batch_size,
-            per_device_eval_batch_size=batch_size,
-            num_train_epochs=epochs,
-            weight_decay=0.01,
-            warmup_ratio=0.1,
-            lr_scheduler_type="cosine",
-            load_best_model_at_end=True,
-            metric_for_best_model="f1",
-            greater_is_better=True,
-            logging_steps=50,
-            report_to="none",
-            seed=42 + fold_idx,
-            fp16=torch.cuda.is_available(),
-            gradient_accumulation_steps=4,
-        )
-
-        label_smoothing = float(experiment_config.get("label_smoothing", DEFAULT_LABEL_SMOOTHING))
-        trainer = WeightedTrainer(
-            class_weights=class_weights,
-            label_smoothing=label_smoothing,
-            model=model,
-            args=training_args,
-            train_dataset=train_dataset,
-            eval_dataset=val_dataset,
-            data_collator=data_collator,
-            compute_metrics=compute_metrics,
-        )
-
-        trainer.train()
-
-        eval_results = trainer.evaluate(val_dataset, metric_key_prefix="eval")
-
-        fold_metrics = {
-            "fold": fold_idx + 1,
-            "f1": eval_results["eval_f1"],
-            "precision": eval_results["eval_precision"],
-            "recall": eval_results["eval_recall"],
-            "accuracy": eval_results["eval_accuracy"],
-            "roc_auc": eval_results["eval_roc_auc"],
-        }
-        fold_results.append(fold_metrics)
-
-        logger.info(
-            f"Fold {fold_idx + 1}: F1={fold_metrics['f1']:.4f} "
-            f"Precision={fold_metrics['precision']:.4f} "
-            f"Recall={fold_metrics['recall']:.4f} "
-            f"AUC={fold_metrics['roc_auc']:.4f}"
-        )
-
-        # Cleanup to free memory:
-        del model, trainer
-        import gc
-
-        gc.collect()
-
-        if torch.backends.mps.is_available():
-            torch.mps.empty_cache()
-
-        elif torch.cuda.is_available():
-            torch.cuda.empty_cache()
-
-    # Aggregate results:
-    results_df = pd.DataFrame(fold_results)
-
-    summary = {
-        "fold": "MEAN ± STD",
-        "f1": f"{results_df['f1'].mean():.4f} ± {results_df['f1'].std():.4f}",
-        "precision": f"{results_df['precision'].mean():.4f} ± {results_df['precision'].std():.4f}",
-        "recall": f"{results_df['recall'].mean():.4f} ± {results_df['recall'].std():.4f}",
-        "accuracy": f"{results_df['accuracy'].mean():.4f} ± {results_df['accuracy'].std():.4f}",
-        "roc_auc": f"{results_df['roc_auc'].mean():.4f} ± {results_df['roc_auc'].std():.4f}",
+    df = load_cv_data()
+    folds = build_cv_folds(df, n_splits, protocol)
+    output = RESULTS_DIR / "cross_validation" / experiment_name / protocol
+    manifest = {
+        "protocol_version": PROTOCOL_VERSION,
+        "experiment": experiment_name,
+        "protocol": protocol,
+        "evaluation_target": "raw_model_refitted_on_all_outer_training",
+        "threshold": 0.5,
+        "calibration": "none",
+        "test_loaded": False,
+        "seed": RANDOM_STATE,
+        "data": current_split_manifest(),
+        "config": experiment or config["baseline"],
+        "folds": int(folds.nunique()),
+        "rows": len(df),
     }
-    summary_df = pd.DataFrame([summary])
-    final_df = pd.concat([results_df, summary_df], ignore_index=True)
+    fingerprint = identity(manifest)
+    output.mkdir(parents=True, exist_ok=True)
+    assignments = df[["Record_ID", TEMPLATE_GROUP_COL, SOURCE_COL, LABEL_COL, "CV_Origin_Split"]].copy()
+    assignments["outer_fold"] = folds + 1
+    old_manifest = output / "cv_manifest.json"
 
-    logger.info(f"\n{final_df.to_string(index=False)}")
+    if old_manifest.exists() and json.loads(old_manifest.read_text()) != manifest:
+        raise ValueError("CV inputs changed; choose a new run ID")
 
-    output_path = BASE_DIR / "results" / f"kfold_{experiment_name}.csv"
-    final_df.to_csv(output_path, index=False)
-    logger.info(f"Results saved to {output_path}")
+    atomic_json(old_manifest, manifest)
+    assignments.to_csv(output / "fold_assignments.csv", index=False)
+    metrics_rows, prediction_frames = [], []
 
-    return final_df
+    with stage_status(output, fingerprint):
+        for fold in sorted(folds.unique()):
+            fold_dir = output / f"fold_{fold + 1}"
+            done = fold_dir / "completed.json"
+
+            if done.exists():
+                saved = json.loads(done.read_text())
+
+                if saved["fingerprint"] != fingerprint or any(
+                    file_sha256(fold_dir / name) != digest for name, digest in saved["files"].items()
+                ):
+                    raise ValueError(f"Stale/corrupt completed CV fold: {fold_dir}")
+
+                metrics_rows.append(json.loads((fold_dir / "metrics.json").read_text()))
+                prediction_frames.append(pd.read_csv(fold_dir / "predictions.csv"))
+                continue
+
+            training = df.loc[outer_training_mask(df, folds, int(fold))].copy()
+            evaluation = df.loc[folds == fold].copy()
+            fold_dir.mkdir(parents=True, exist_ok=True)
+            roles = assignments.copy()
+            roles["role"] = "purged_template_relative"
+            roles.loc[training.index, "role"] = "outer_train_refit"
+            roles.loc[evaluation.index, "role"] = "outer_evaluation"
+            roles.to_csv(fold_dir / "assignments.csv", index=False)
+
+            with stage_status(fold_dir, fingerprint):
+                selection: dict[str, Any] = {}
+
+                if experiment_name == "baseline":
+                    model = build_baseline_pipeline(config)
+                    model.fit(training[TEXT_COL], training[LABEL_COL].astype(int))
+                    probs = model.predict_proba(evaluation[TEXT_COL])[:, 1]
+                    del model
+
+                else:
+                    assert experiment is not None
+                    selection = select_epoch(
+                        experiment, training, fold_dir, RANDOM_STATE + int(fold), selection_fold=int(fold)
+                    )
+                    trainer, tokenizer = train_phase(
+                        experiment,
+                        training,
+                        None,
+                        fold_dir / "refit",
+                        RANDOM_STATE + int(fold),
+                        selection["selected_epoch"],
+                    )
+                    output_predictions = trainer.predict(
+                        prepare_dataset(evaluation, tokenizer, int(experiment["max_length"]))
+                    )
+                    probs = torch.softmax(torch.tensor(output_predictions.predictions), dim=-1)[:, 1].numpy()
+                    del trainer, tokenizer
+                    release_memory()
+
+                labels = evaluation[LABEL_COL].to_numpy(dtype=int)
+                row = {
+                    "fold": int(fold) + 1,
+                    "held_out_source": (
+                        str(evaluation[SOURCE_COL].iloc[0]) if protocol == SOURCE_HOLDOUT_PROTOCOL else ""
+                    ),
+                    "outer_train_rows": len(training),
+                    "refit_training_rows": len(training),
+                    "outer_validation_rows": len(evaluation),
+                    "purged_rows": int((folds != fold).sum()) - len(training),
+                    "selected_epoch": selection.get("selected_epoch"),
+                    **binary_classification_metrics(labels, probs),
+                }
+                predictions = assignments.loc[evaluation.index].copy()
+                predictions.insert(0, "row_position", evaluation.index)
+                predictions["probability"] = probs
+                predictions["prediction"] = (probs >= 0.5).astype(int)
+                predictions.to_csv(fold_dir / "predictions.csv", index=False)
+                atomic_json(fold_dir / "metrics.json", row)
+                atomic_json(
+                    done,
+                    {
+                        "fingerprint": fingerprint,
+                        "files": {name: file_sha256(fold_dir / name) for name in ("metrics.json", "predictions.csv")},
+                    },
+                )
+                metrics_rows.append(row)
+                prediction_frames.append(predictions)
+
+        metrics = pd.DataFrame(metrics_rows)
+        oof = pd.concat(prediction_frames, ignore_index=True).sort_values("row_position")
+
+        if len(oof) != len(df) or oof.row_position.nunique() != len(df) or set(oof.Record_ID) != set(df.Record_ID):
+            raise ValueError("Incomplete/duplicate OOF predictions")
+
+        metrics.to_csv(output / "fold_metrics.csv", index=False)
+        oof.to_csv(output / "oof_predictions.csv", index=False)
+        labels, probabilities, groups = (
+            oof[LABEL_COL].to_numpy(dtype=int),
+            oof.probability.to_numpy(),
+            oof[TEMPLATE_GROUP_COL].to_numpy(dtype=str),
+        )
+        intervals = grouped_bootstrap_confidence_intervals(
+            labels, probabilities, groups, n_resamples=cv_config["bootstrap_resamples"]
+        )
+        binomial = template_group_binomial_confidence_intervals(labels, probabilities, groups)
+        pd.DataFrame([{"metric": key, **value} for key, value in intervals.items()]).to_csv(
+            output / "oof_group_bootstrap_ci.csv", index=False
+        )
+        pd.DataFrame([{"metric": key, **value} for key, value in binomial.items()]).to_csv(
+            output / "oof_group_binomial_ci.csv", index=False
+        )
+        atomic_json(
+            output / "summary.json",
+            {
+                **manifest,
+                "pooled_oof_metrics": binary_classification_metrics(labels, probabilities),
+                "fold_distribution": {
+                    metric: {"mean": float(metrics[metric].mean()), "std": float(metrics[metric].std())}
+                    for metric in ("f1", "precision", "recall", "accuracy", "roc_auc")
+                },
+                "group_bootstrap_confidence_intervals": intervals,
+                "uncertainty_scope": "conditional_on_fitted_models; excludes_training_seed_variation",
+            },
+        )
+
+    return metrics
 
 
 def main() -> None:
-    parser = argparse.ArgumentParser(description="Run K-Fold CV for a transformer experiment.")
+    parser = argparse.ArgumentParser(description=__doc__)
+    parser.add_argument("--experiment_name", required=True)
     parser.add_argument(
-        "--experiment_name",
-        type=str,
-        required=True,
-        help="Experiment name from params.yaml",
+        "--protocol", choices=[TEMPLATE_GROUP_PROTOCOL, SOURCE_HOLDOUT_PROTOCOL], default=TEMPLATE_GROUP_PROTOCOL
     )
-    parser.add_argument(
-        "--n_splits",
-        type=int,
-        default=5,
-        help="Number of CV folds (default: 5)",
-    )
+    parser.add_argument("--n_splits", type=int, default=5)
     args = parser.parse_args()
-
-    run_kfold(experiment_name=args.experiment_name, n_splits=args.n_splits)
+    run_kfold(args.experiment_name, args.n_splits, args.protocol)
 
 
 if __name__ == "__main__":
