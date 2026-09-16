@@ -1,20 +1,18 @@
-"""Fine-tuning transformer models for phishing detection.
-
-Loads pre-trained transformer models, prepares tokenized datasets,
-and trains them with weighted loss to handle class imbalance.
-Saves trained models and metrics to disk and MLflow.
-"""
+"""Inner epoch selection followed by a fresh refit on all training groups."""
 
 import argparse
-import os
-from typing import Any, Dict, Tuple, Union
+import json
+import math
+import re
+import shutil
+from pathlib import Path
+from typing import Any
 
-import mlflow
+import numpy as np
 import pandas as pd
 import torch
 import yaml
-from datasets import Dataset, DatasetDict
-from sklearn.metrics import accuracy_score, precision_recall_fscore_support, roc_auc_score
+from datasets import Dataset
 from torch import nn
 from transformers import (
     AutoModelForSequenceClassification,
@@ -26,351 +24,230 @@ from transformers import (
     TrainingArguments,
 )
 
-from src.config import BASE_DIR, LABEL_COL, SPLIT_DATA_DIR, TEXT_COL
-from src.data.augmented_dataset import AugmentedPhishingDataset
-from src.utils.logger import get_logger
-
-logger = get_logger(__name__)
+from src.config import BASE_DIR, DEFAULT_MAX_LENGTH, LABEL_COL, RANDOM_STATE, RESULTS_DIR, SAVED_MODELS_DIR, TEXT_COL
+from src.data.cv_folds import build_inner_validation_mask
+from src.data.load_data import load_split
+from src.evaluation.uncertainty import binary_classification_metrics
+from src.models.provenance import artefact_matches_current_split, current_split_manifest, write_training_manifest
+from src.models.runtime import configure_runtime, get_device, release_memory, runtime_metadata
+from src.models.training_schedule import calculate_warmup_steps, resolve_training_schedule
+from src.utils.artifacts import atomic_json, bind_run, identity, stage_status
 
 DEFAULT_FREEZE_LAYERS = 0
 DEFAULT_LABEL_SMOOTHING = 0.1
 
 
-def freeze_lower_layers(model: PreTrainedModel, num_layers_to_freeze: int = DEFAULT_FREEZE_LAYERS) -> None:
-    """Freeze the embedding and lower encoder layers of a transformer model.
+def freeze_lower_layers(model: PreTrainedModel, num_layers_to_freeze: int = 0) -> None:
+    if num_layers_to_freeze <= 0:
+        return
 
-    Reduces overfitting on small datasets by only training upper layers
-    while preserving pre-trained lower-level representations.
-
-    Args:
-        model: The transformer model to partially freeze.
-        num_layers_to_freeze: Number of encoder layers to freeze (from bottom).
-    """
-    # Freeze embeddings:
-    for name, param in model.named_parameters():
-        if "embeddings" in name:
-            param.requires_grad = False
-
-    # Freeze lower encoder layers:
-    frozen = 0
-    for name, param in model.named_parameters():
-        if any(f"layer.{i}." in name or f"layers.{i}." in name for i in range(num_layers_to_freeze)):
-            param.requires_grad = False
-            frozen += 1
-
-    trainable = sum(1 for p in model.parameters() if p.requires_grad)
-    total = sum(1 for _ in model.parameters())
-    logger.info(f"Froze {total - trainable}/{total} parameters (lower {num_layers_to_freeze} layers + embeddings)")
-
-
-def get_device() -> torch.device:
-    """Get the optimal available device for training.
-
-    Checks for availability of MPS (Apple Silicon) and CUDA (NVIDIA)
-    devices. Defaults to CPU if no accelerator is available.
-
-    Returns:
-        torch.device: The best available device (mps, cuda, or cpu).
-    """
-    if torch.backends.mps.is_available():
-        return torch.device("mps")
-
-    elif torch.cuda.is_available():
-        return torch.device("cuda")
-
-    else:
-        return torch.device("cpu")
+    for name, parameter in model.named_parameters():
+        if "embeddings" in name or any(f"layer.{i}." in name for i in range(num_layers_to_freeze)):
+            parameter.requires_grad = False
 
 
 def prepare_dataset(df: pd.DataFrame, tokenizer: Any, max_length: int) -> Dataset:
-    """Prepare and tokenize a dataset from a DataFrame.
-
-    Converts label columns to integers if necessary, ensures text columns
-    are strings, converts the DataFrame to a Hugging Face Dataset, and
-    applies tokenization.
-
-    Args:
-        df: Input pandas DataFrame containing text and labels.
-        tokenizer: Hugging Face tokenizer instance to process text.
-        max_length: Maximum sequence length for tokenization padding and
-            truncation.
-
-    Returns:
-        Dataset: A Hugging Face Dataset object containing tokenized inputs
-            and labels ready for training.
-    """
-    if df[LABEL_COL].dtype == bool:
-        df[LABEL_COL] = df[LABEL_COL].astype(int)
-
-    elif df[LABEL_COL].dtype == object:
-        pass  # Assume already correct or handled elsewhere
-
-    # Ensure text is string:
-    df[TEXT_COL] = df[TEXT_COL].astype(str)
-
-    dataset = Dataset.from_pandas(df[[TEXT_COL, LABEL_COL]])
-    dataset = dataset.rename_column(LABEL_COL, "labels")
-
-    def tokenize_function(examples: Dict[str, Any]) -> Any:
-        return tokenizer(
-            examples[TEXT_COL],
-            truncation=True,
-            max_length=max_length,
-        )
-
-    return dataset.map(tokenize_function, batched=True)
+    frame = pd.DataFrame({TEXT_COL: df[TEXT_COL].astype(str), "labels": df[LABEL_COL].astype(int)})
+    dataset = Dataset.from_pandas(frame, preserve_index=False)
+    return dataset.map(
+        lambda examples: tokenizer(examples[TEXT_COL], truncation=True, max_length=max_length),
+        batched=True,
+        remove_columns=[TEXT_COL],
+        keep_in_memory=True,
+    )
 
 
-def load_and_prepare_data(tokenizer: Any, max_length: int) -> DatasetDict:
-    """Load, process, and tokenize all dataset splits.
-
-    Iterates through train, validation, and test splits stored as CSV
-    files in ``SPLIT_DATA_DIR``, loading and preparing each using
-    ``prepare_dataset``.
-
-    Args:
-        tokenizer: Hugging Face tokenizer instance used for processing.
-        max_length: Maximum sequence length for tokenization.
-
-    Returns:
-        DatasetDict: A dictionary-like object containing 'train', 'val',
-            and 'test' datasets.
-
-    Raises:
-        FileNotFoundError: If any required split file is missing.
-    """
-    data = {}
-
-    for split in ["train", "val", "test"]:
-        path = SPLIT_DATA_DIR / f"{split}.csv"
-
-        if not path.exists():
-            raise FileNotFoundError(f"File not found: {path}")
-
-        df = pd.read_csv(path)
-        data[split] = prepare_dataset(df, tokenizer, max_length)
-
-    return DatasetDict(data)
-
-
-def compute_metrics(pred: Any) -> Dict[str, Any]:
-    """Compute evaluation metrics for the trainer.
-
-    Calculates accuracy, precision, recall, and F1-score for binary
-    classification tasks.
-
-    Args:
-        pred: A named tuple or object containing 'label_ids' and
-            'predictions' (logits).
-
-    Returns:
-        dict: A dictionary mapping metric names (str) to their computed
-            values (float).
-    """
-    labels = pred.label_ids
-    logits = pred.predictions
-    preds = logits.argmax(-1)
-    precision, recall, f1, _ = precision_recall_fscore_support(labels, preds, average="binary")
-    acc = accuracy_score(labels, preds)
-
-    probs = torch.nn.functional.softmax(torch.tensor(logits), dim=-1)[:, 1].numpy()
-    auc = roc_auc_score(labels, probs)
-
-    return {"accuracy": acc, "f1": f1, "precision": precision, "recall": recall, "roc_auc": auc}
+def compute_metrics(pred: Any) -> dict[str, float]:
+    probabilities = torch.softmax(torch.tensor(pred.predictions), dim=-1)[:, 1].numpy()
+    return binary_classification_metrics(np.asarray(pred.label_ids, dtype=int), probabilities)
 
 
 class WeightedTrainer(Trainer):
-    """Trainer with dynamic class-weighted CrossEntropyLoss.
+    """Mean weighted loss per example over the *whole* effective batch.
 
-    Computes class weights from the training set so the minority class
-    receives proportionally higher loss contribution.
+    Weights are fixed inverse training frequencies. Unlike per-microbatch
+    weighted means, this objective is invariant to microbatch composition.
     """
 
     def __init__(self, class_weights: torch.Tensor, label_smoothing: float = 0.0, **kwargs: Any) -> None:
         super().__init__(**kwargs)
         self.class_weights = class_weights
         self.label_smoothing = label_smoothing
+        self.model_accepts_loss_kwargs = True
+
+        if self.args.world_size != 1:
+            raise ValueError("This verified weighted-loss protocol supports one training device")
 
     def compute_loss(
         self,
         model: nn.Module,
-        inputs: Dict[str, Union[torch.Tensor, Any]],
+        inputs: dict[str, Any],
         return_outputs: bool = False,
-        num_items_in_batch: Union[torch.Tensor, int, None] = None,
-    ) -> Union[torch.Tensor, Tuple[torch.Tensor, Any]]:
-
-        if not isinstance(model, PreTrainedModel):
-            raise TypeError("Expected PreTrainedModel")
-
-        labels = inputs.get("labels")
-        if labels is None:
-            raise ValueError("Labels are missing from inputs")
-
-        outputs = model(**inputs)
+        num_items_in_batch: torch.Tensor | int | None = None,
+    ) -> Any:
+        labels = inputs["labels"].long()
+        outputs = model(**{key: value for key, value in inputs.items() if key != "labels"})
         logits = outputs["logits"]
-
-        num_labels = model.config.num_labels
-
         weights = self.class_weights.to(device=logits.device, dtype=logits.dtype)
-
-        loss_fct = nn.CrossEntropyLoss(weight=weights, label_smoothing=self.label_smoothing)
-
-        loss = loss_fct(
-            logits.view(-1, num_labels),
-            labels.view(-1).long(),
+        loss = nn.functional.cross_entropy(
+            logits, labels, weight=weights, label_smoothing=self.label_smoothing, reduction="sum"
         )
-
+        denominator = num_items_in_batch if num_items_in_batch is not None else labels.numel()
+        loss = loss / torch.as_tensor(denominator, device=loss.device, dtype=loss.dtype)
         return (loss, outputs) if return_outputs else loss
 
 
-# Main:
-def main(experiment_name: str = "") -> None:
-    """Fine-tune a transformer model for phishing detection.
+def train_phase(
+    config: dict[str, Any],
+    training: pd.DataFrame,
+    validation: pd.DataFrame | None,
+    output_dir: Path,
+    seed: int,
+    epochs: int,
+) -> tuple[WeightedTrainer, Any]:
+    device = configure_runtime(seed)
+    batch, eval_batch, accumulation, checkpointing = resolve_training_schedule(config)
 
-    Loads experiment configuration from params.yaml, prepares tokenized
-    datasets, initializes a transformer model, and trains it with weighted
-    loss on imbalanced data. Saves the trained model and logs metrics to MLflow.
+    if int(config["max_length"]) != DEFAULT_MAX_LENGTH:
+        raise ValueError("Non-canonical maximum sequence length")
 
-    Args:
-        experiment_name: Name of the experiment from params.yaml.
-            If empty, parsed from CLI arguments.
-    """
-    if not experiment_name:
-        parser = argparse.ArgumentParser(description="Fine-tune a transformer model.")
-        parser.add_argument(
-            "--experiment_name",
-            type=str,
-            required=True,
-            help="Name of the experiment to run from params.yaml",
-        )
-        args = parser.parse_args()
-        experiment_name = args.experiment_name
+    revision = config.get("revision")
 
-    params_path = BASE_DIR / "params.yaml"
+    if not revision or (not Path(config["model_name"]).is_dir() and not re.fullmatch(r"[0-9a-f]{40}", str(revision))):
+        raise ValueError("Pin an immutable model/tokenizer revision in params.yaml")
 
-    with open(params_path, "r") as f:
-        full_config = yaml.safe_load(f)
+    tokenizer = AutoTokenizer.from_pretrained(config["model_name"], revision=revision)
+    training_dataset = prepare_dataset(training, tokenizer, DEFAULT_MAX_LENGTH)
+    validation_dataset = prepare_dataset(validation, tokenizer, DEFAULT_MAX_LENGTH) if validation is not None else None
 
-    experiment_config = next(
-        (exp for exp in full_config["experiments"] if exp["name"] == experiment_name),
-        None,
+    # Tokenization must not influence random initialization:
+    configure_runtime(seed)
+    model = AutoModelForSequenceClassification.from_pretrained(
+        config["model_name"], revision=revision, num_labels=2, attn_implementation="eager"
+    )
+    model.config.id2label = {0: "LEGIT", 1: "PHISH"}
+    model.config.label2id = {"LEGIT": 0, "PHISH": 1}
+    freeze_lower_layers(model, int(config.get("freeze_layers", 0)))
+    counts = training[LABEL_COL].astype(int).value_counts()
+
+    if set(counts.index) != {0, 1}:
+        raise ValueError("Training requires both labels")
+
+    weights = torch.tensor([len(training) / (2 * counts[c]) for c in (0, 1)], dtype=torch.float32)
+    args = TrainingArguments(
+        output_dir=str(output_dir),
+        eval_strategy="epoch" if validation is not None else "no",
+        save_strategy="best" if validation is not None else "no",
+        save_total_limit=1,
+        save_only_model=True,
+        learning_rate=float(config["learning_rate"]),
+        per_device_train_batch_size=batch,
+        per_device_eval_batch_size=eval_batch,
+        num_train_epochs=epochs,
+        weight_decay=0.01,
+        warmup_steps=calculate_warmup_steps(len(training), batch, accumulation, epochs),
+        lr_scheduler_type="cosine",
+        load_best_model_at_end=validation is not None,
+        metric_for_best_model="f1" if validation is not None else None,
+        greater_is_better=True,
+        logging_steps=25,
+        report_to="none",
+        seed=seed,
+        data_seed=seed,
+        full_determinism=True,
+        fp16=False,
+        bf16=False,
+        use_cpu=device.type == "cpu",
+        optim="adamw_torch",
+        gradient_accumulation_steps=accumulation,
+        gradient_checkpointing=checkpointing,
+        dataloader_pin_memory=False,
+        dataloader_num_workers=0,
     )
 
-    if experiment_config is None:
-        raise ValueError(f"Experiment '{experiment_name}' not found in params.yaml")
+    trainer = WeightedTrainer(
+        class_weights=weights,
+        label_smoothing=float(config.get("label_smoothing", DEFAULT_LABEL_SMOOTHING)),
+        model=model,
+        args=args,
+        train_dataset=training_dataset,
+        eval_dataset=validation_dataset,
+        data_collator=DataCollatorWithPadding(tokenizer=tokenizer, pad_to_multiple_of=8),
+        compute_metrics=compute_metrics,
+        callbacks=[EarlyStoppingCallback(early_stopping_patience=3)] if validation is not None else [],
+    )
 
-    model_name = experiment_config["model_name"]
-    max_length = experiment_config["max_length"]
-    batch_size = experiment_config["batch_size"]
-    epochs = experiment_config["epochs"]
-    learning_rate = float(experiment_config["learning_rate"])
+    trainer.train()
+    return trainer, tokenizer
 
-    mlflow.set_experiment("phishing_transformer_finetune")
-    mlflow.start_run(run_name=experiment_name)
 
-    try:
-        mlflow.log_params(experiment_config)
+def select_epoch(
+    config: dict[str, Any], training: pd.DataFrame, output_dir: Path, seed: int, selection_fold: int = 0
+) -> dict[str, Any]:
+    mask = build_inner_validation_mask(training, outer_fold=selection_fold)
+    assignments = training[[c for c in ("Record_ID", "Template_Group", LABEL_COL) if c in training]].copy()
+    assignments["role"] = np.where(mask, "epoch_validation", "epoch_train")
+    output_dir.mkdir(parents=True, exist_ok=True)
+    assignments.to_csv(output_dir / "epoch_assignments.csv", index=False)
+    trainer, tokenizer = train_phase(
+        config, training.loc[~mask], training.loc[mask], output_dir / "selection", seed, int(config["epochs"])
+    )
+    history = [r for r in trainer.state.log_history if "eval_f1" in r]
+    best = max(history, key=lambda row: (row["eval_f1"], -row["epoch"]))
+    selection = {
+        "selected_epoch": math.ceil(best["epoch"]),
+        "inner_best_f1": best["eval_f1"],
+        "epoch_train_rows": int((~mask).sum()),
+        "epoch_validation_rows": int(mask.sum()),
+        "seed": seed,
+        "runtime": runtime_metadata(),
+        "history": history,
+    }
+    atomic_json(output_dir / "epoch_selection.json", selection)
+    del trainer, tokenizer
+    release_memory()
+    shutil.rmtree(output_dir / "selection", ignore_errors=True)
+    return selection
 
-        logger.info(f"Loading tokenizer: {model_name}")
-        tokenizer = AutoTokenizer.from_pretrained(model_name)
 
-        logger.info("Loading and preparing data...")
-        tokenized_datasets = load_and_prepare_data(tokenizer, max_length)
+def main(experiment_name: str = "") -> None:
+    if not experiment_name:
+        parser = argparse.ArgumentParser()
+        parser.add_argument("--experiment_name", required=True)
+        experiment_name = parser.parse_args().experiment_name
+    config = yaml.safe_load((BASE_DIR / "params.yaml").read_text())
+    experiment = next(e for e in config["experiments"] if e["name"] == experiment_name)
+    bind_run()
+    model_dir = SAVED_MODELS_DIR / experiment_name
 
-        # Build on-the-fly augmenting dataset for training:
-        train_df = pd.read_csv(SPLIT_DATA_DIR / "train.csv")
-        train_texts = train_df[TEXT_COL].astype(str).tolist()
-        train_labels = train_df[LABEL_COL].map({False: 0, True: 1}).astype(int).tolist()
+    if artefact_matches_current_split(model_dir):
+        return
 
-        augmented_train_dataset = AugmentedPhishingDataset(
-            texts=train_texts,
-            labels=train_labels,
-            tokenizer=tokenizer,
-            max_length=max_length,
-            augment=True,
+    training = load_split("train")
+    output = RESULTS_DIR / "training" / experiment_name
+    fingerprint = identity({"split": current_split_manifest(), "config": experiment, "seed": RANDOM_STATE})
+
+    with stage_status(output, fingerprint):
+        selection = select_epoch(experiment, training, output, RANDOM_STATE)
+        trainer, tokenizer = train_phase(
+            experiment, training, None, output / "refit", RANDOM_STATE, selection["selected_epoch"]
         )
-        logger.info(f"On-the-fly augmented training dataset: {len(augmented_train_dataset)} samples")
-
-        # Compute class weights from training labels (inverse frequency):
-        label_counts = train_df[LABEL_COL].value_counts().sort_index()
-        total = len(train_df)
-        class_weights = torch.tensor([total / (2 * label_counts[c]) for c in sorted(label_counts.index)])
-        logger.info(f"Computed class weights: {class_weights.tolist()}")
-
-        logger.info(f"Loading model: {model_name}")
-        model = AutoModelForSequenceClassification.from_pretrained(model_name, num_labels=2)
-
-        # Freeze lower encoder layers to reduce overfitting on small dataset:
-        freeze_layers = int(experiment_config.get("freeze_layers", DEFAULT_FREEZE_LAYERS))
-        if freeze_layers > 0:
-            freeze_lower_layers(model, num_layers_to_freeze=freeze_layers)
-
-        device = get_device()
-        logger.info(f"Using device: {device}")
-        model.to(device)
-
-        data_collator = DataCollatorWithPadding(tokenizer=tokenizer)
-
-        output_dir = f"./results/{experiment_name}"
-
-        training_args = TrainingArguments(
-            output_dir=output_dir,
-            eval_strategy="epoch",
-            save_strategy="epoch",
-            learning_rate=learning_rate,
-            per_device_train_batch_size=batch_size,
-            per_device_eval_batch_size=batch_size,
-            num_train_epochs=epochs,
-            weight_decay=0.01,
-            warmup_ratio=0.1,
-            lr_scheduler_type="cosine",
-            load_best_model_at_end=True,
-            metric_for_best_model="f1",
-            greater_is_better=True,
-            logging_steps=10,
-            logging_dir=f"./logs/{experiment_name}",
-            report_to="mlflow",
-            seed=42,
-            fp16=torch.cuda.is_available(),
-            gradient_accumulation_steps=4,
+        model_dir.mkdir(parents=True, exist_ok=True)
+        trainer.save_model(str(model_dir))
+        tokenizer.save_pretrained(model_dir)
+        write_training_manifest(
+            model_dir,
+            experiment_name,
+            {
+                **experiment,
+                **selection,
+                "refit_training_rows": len(training),
+                "loss_reduction": "weighted_sum_over_effective_batch_examples",
+            },
         )
-
-        # Use WeightedTrainer instead of standard Trainer:
-        label_smoothing = float(experiment_config.get("label_smoothing", DEFAULT_LABEL_SMOOTHING))
-        trainer = WeightedTrainer(
-            class_weights=class_weights,
-            label_smoothing=label_smoothing,
-            model=model,
-            args=training_args,
-            train_dataset=augmented_train_dataset,
-            eval_dataset=tokenized_datasets["val"],
-            data_collator=data_collator,
-            compute_metrics=compute_metrics,
-            callbacks=[EarlyStoppingCallback(early_stopping_patience=3)],
-        )
-
-        logger.info(f"Starting weighted training for: {experiment_name}...")
-        trainer.train()
-
-        logger.info("Evaluating on test set...")
-        test_results = trainer.evaluate(tokenized_datasets["test"], metric_key_prefix="test")
-
-        logger.info(f"Test results: {test_results}")
-        mlflow.log_metrics(test_results)
-
-        model_save_path = f"./saved_models/{experiment_name}"
-
-        if not os.path.exists(model_save_path):
-            os.makedirs(model_save_path)
-
-        logger.info(f"Saving model to {model_save_path}")
-        trainer.save_model(model_save_path)
-        tokenizer.save_pretrained(model_save_path)
-
-    finally:
-        mlflow.end_run()
+        del trainer, tokenizer
+        release_memory()
 
 
-# Entry point:
 if __name__ == "__main__":
     main()
