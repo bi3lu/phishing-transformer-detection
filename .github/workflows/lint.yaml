@@ -18,16 +18,19 @@ jobs:
           cache-dependency-glob: "uv.lock"
 
       - name: Set up Python
-        run: uv python install
+        run: uv python install 3.12
 
       - name: Install dependencies
-        run: uv sync --all-extras --dev
+        run: uv sync --frozen --python 3.12 --all-extras
 
       - name: Run Black
-        run: uv run black --check .
+        run: uv run --frozen black --check .
 
       - name: Run Isort
-        run: uv run isort --check-only .
+        run: uv run --frozen isort --check-only .
 
       - name: Run Mypy
-        run: uv run mypy .
+        run: uv run --frozen mypy .
+
+      - name: Run regression tests
+        run: uv run --frozen python -m unittest discover -s tests -v
