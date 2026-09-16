@@ -4,7 +4,7 @@ Trains and evaluates a classical machine learning pipeline as a baseline
 for comparison with transformer-based models."""
 
 import os
-from typing import Any
+from typing import Any, Dict
 
 import joblib
 import mlflow
@@ -20,12 +20,39 @@ from sklearn.metrics import (
 )
 from sklearn.pipeline import Pipeline
 
-from src.config import BASE_DIR, RANDOM_STATE
+from src.config import BASE_DIR, RANDOM_STATE, SAVED_MODELS_DIR
 from src.data.load_data import load_split, prepare_xy
+from src.models.provenance import write_training_manifest
 from src.utils.logger import get_logger
 
 # Setup logging:
 logger = get_logger(__name__)
+
+
+def build_baseline_pipeline(config: Dict[str, Any]) -> Pipeline:
+    """Create the canonical unfitted baseline used by training and CV."""
+    tfidf_params = config["baseline"]["tfidf"]
+    lr_params = config["baseline"]["logistic_regression"]
+    return Pipeline(
+        steps=[
+            (
+                "tfidf",
+                TfidfVectorizer(
+                    ngram_range=tuple(tfidf_params["ngram_range"]),
+                    max_features=tfidf_params["max_features"],
+                    min_df=tfidf_params["min_df"],
+                ),
+            ),
+            (
+                "clf",
+                LogisticRegression(
+                    max_iter=lr_params["max_iter"],
+                    class_weight=lr_params["class_weight"],
+                    random_state=RANDOM_STATE,
+                ),
+            ),
+        ]
+    )
 
 
 # Logging metrics:
@@ -66,112 +93,26 @@ def log_metrics(y_true: Any, y_pred: Any, y_probs: Any, prefix: str = "val") -> 
 
 # Main:
 def main() -> None:
-    """Run the baseline phishing detection experiment.
+    """Train once on train; validation remains exclusively for downstream decisions."""
+    from src.models.provenance import artefact_matches_current_split, current_split_manifest
+    from src.utils.artifacts import bind_run, identity, stage_status
 
-    This function trains a text classification pipeline consisting of
-    TF-IDF vectorization followed by Logistic Regression. It evaluates
-    the model on validation and test splits, logs metrics and parameters
-    to MLflow, and saves the trained pipeline both as an MLflow artifact
-    and locally under ``saved_models/baseline`` so that the output layout
-    matches the fine‑tuned transformer experiments.
-    Detailed logs including a classification report are emitted.
+    bind_run()
+    config = yaml.safe_load((BASE_DIR / "params.yaml").read_text())
+    destination = SAVED_MODELS_DIR / "baseline"
 
-    The dataset splits are expected to be stored as CSV files in
-    ``SPLIT_DATA_DIR`` with names: train.csv, val.csv, and test.csv.
-    """
-    logger.info("Running baseline TF-IDF + LogisticRegression")
+    if artefact_matches_current_split(destination):
+        return
 
-    # Load parameters from yaml config:
-    params_path = BASE_DIR / "params.yaml"
+    training = load_split("train")
+    x_train, y_train = prepare_xy(training)
 
-    with open(params_path, "r") as f:
-        config = yaml.safe_load(f)
-
-    tfidf_params = config["baseline"]["tfidf"]
-    lr_params = config["baseline"]["logistic_regression"]
-
-    train_df = load_split("train")
-    val_df = load_split("val")
-    test_df = load_split("test")
-
-    X_train, y_train = prepare_xy(train_df)
-    X_val, y_val = prepare_xy(val_df)
-    X_test, y_test = prepare_xy(test_df)
-
-    pipeline = Pipeline(
-        steps=[
-            (
-                "tfidf",
-                TfidfVectorizer(
-                    ngram_range=tuple(tfidf_params["ngram_range"]),
-                    max_features=tfidf_params["max_features"],
-                    min_df=tfidf_params["min_df"],
-                ),
-            ),
-            (
-                "clf",
-                LogisticRegression(
-                    max_iter=lr_params["max_iter"],
-                    class_weight=lr_params["class_weight"],
-                    random_state=RANDOM_STATE,
-                ),
-            ),
-        ]
-    )
-
-    mlflow.set_experiment("phishing_baseline")
-
-    with mlflow.start_run(run_name="tfidf_logreg"):
-        logger.info("Training baseline model...")
-        pipeline.fit(X_train, y_train)
-
-        logger.info("Evaluating on validation set...")
-        val_preds = pipeline.predict(X_val)
-        val_probs = pipeline.predict_proba(X_val)[:, 1]
-
-        log_metrics(y_val, val_preds, val_probs, prefix="val")
-
-        mlflow.log_params(
-            {
-                "model": "LogisticRegression",
-                "vectorizer": "TF-IDF",
-                "ngram_range": str(tuple(tfidf_params["ngram_range"])),
-                "max_features": tfidf_params["max_features"],
-                "class_weight": lr_params["class_weight"],
-            }
-        )
-
-        # Final test evaluation:
-        logger.info("Evaluating on test set...")
-        test_preds = pipeline.predict(X_test)
-        test_probs = pipeline.predict_proba(X_test)[:, 1]
-
-        log_metrics(y_test, test_preds, test_probs, prefix="test")
-
-        logger.info("Classification report (TEST):")
-        logger.info("\n" + classification_report(y_test, test_preds))
-
-        mlflow.sklearn.log_model(pipeline, artifact_path="model")
-
-        model_save_path = BASE_DIR / "saved_models" / "baseline"
-
-        if not model_save_path.exists():
-            os.makedirs(model_save_path)
-
-        pipeline_path = model_save_path / "pipeline.joblib"
-        logger.info(f"Saving baseline pipeline to {pipeline_path}")
-        joblib.dump(pipeline, pipeline_path)
-        config_path = model_save_path / "config.yaml"
-
-        with open(config_path, "w") as cf:
-            yaml.safe_dump({"tfidf": tfidf_params, "logistic_regression": lr_params}, cf)
-
-        mlflow.log_artifact(str(pipeline_path), artifact_path="model")
-        mlflow.log_artifact(str(config_path), artifact_path="model")
-
-    logger.info("Baseline experiment finished successfully.")
+    with stage_status(destination, identity({"split": current_split_manifest(), "config": config["baseline"]})):
+        pipeline = build_baseline_pipeline(config)
+        pipeline.fit(x_train, y_train)
+        joblib.dump(pipeline, destination / "pipeline.joblib")
+        write_training_manifest(destination, "baseline", config["baseline"])
 
 
-# Entry point:
 if __name__ == "__main__":
     main()
