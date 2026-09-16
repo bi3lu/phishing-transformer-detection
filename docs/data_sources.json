@@ -1,0 +1,168 @@
+{
+  "schema_version": 1,
+  "files": {
+    "bielik_v3.0/bielik_v3.0_part1.txt": {
+      "sha256": "6e6ec2e8626c9a1748b70b1c13718f84a3c162f809ff8fd476e245841f68b6ce",
+      "analysis_source": "bielik_v3.0",
+      "claimed_generator": "bielik_v3.0",
+      "status": "reported_not_independently_verified",
+      "generation_prompt": null,
+      "generation_parameters": null,
+      "label_review_status": "pending_human_review"
+    },
+    "bielik_v3.0/bielik_v3.0_part2.txt": {
+      "analysis_source": "bielik_v3.0",
+      "claimed_generator": "bielik_v3.0",
+      "status": "reported_not_independently_verified",
+      "generation_prompt": null,
+      "generation_parameters": null,
+      "label_review_status": "pending_human_review",
+      "added_to_repository_audit": "2026-09-14",
+      "sha256": "53d5fe5c38e05de023c0ca42cd9947cbc7eb6a749736f077ad748b4ec52bd7a1"
+    },
+    "deepseek_r1/deepseek_r1_part1.txt": {
+      "sha256": "ab7e29e96c60566139254a8be1e0a58eedaa28c37b188efceaf2a4a472c32ae9",
+      "analysis_source": "deepseek_r1",
+      "claimed_generator": "deepseek_r1",
+      "status": "reported_not_independently_verified",
+      "generation_prompt": null,
+      "generation_parameters": null,
+      "label_review_status": "pending_human_review"
+    },
+    "deepseek_r1/deepseek_r1_part2.txt": {
+      "sha256": "7b70c57c72848bfb5ab78e57a827156d9a497f5d80464e01772bfb88158e4d05",
+      "analysis_source": "deepseek_r1",
+      "claimed_generator": "deepseek_r1",
+      "status": "reported_not_independently_verified",
+      "generation_prompt": null,
+      "generation_parameters": null,
+      "label_review_status": "pending_human_review"
+    },
+    "gemini_3/gemini_3_part1.txt": {
+      "sha256": "7bc49ec1ff97cf529481c14c2c77a6b16159e348679bd315dee8d827e1917276",
+      "analysis_source": "gemini_3",
+      "claimed_generator": "gemini_3",
+      "status": "reported_not_independently_verified",
+      "generation_prompt": null,
+      "generation_parameters": null,
+      "label_review_status": "pending_human_review"
+    },
+    "gemini_3/gemini_3_part2.txt": {
+      "sha256": "bed4223f79c31c0061b80a5c2284a125f68e964980e21905df9972e20e031a1d",
+      "analysis_source": "gemini_3",
+      "claimed_generator": "gemini_3",
+      "status": "reported_not_independently_verified",
+      "generation_prompt": null,
+      "generation_parameters": null,
+      "label_review_status": "pending_human_review",
+      "previous_sha256": "f53a5ac8f6a76fd1b5a7f629922041f577197b02c5a1d9573a6a857ed721fbcc",
+      "changed_during_audit": "2026-09-14"
+    },
+    "gemini_3.6_flash/gemini_3.6_flash_part1.txt": {
+      "analysis_source": "gemini_3.6_flash",
+      "claimed_generator": "gemini_3.6_flash",
+      "status": "reported_not_independently_verified",
+      "generation_prompt": null,
+      "generation_parameters": null,
+      "label_review_status": "pending_human_review",
+      "added_to_repository_audit": "2026-09-14",
+      "sha256": "308a265df3e94b47288d459423720ddf293f02848d3108dce5b71b47b6ca9702"
+    },
+    "gemini_3.6_flash/gemini_3.6_flash_part2.txt": {
+      "analysis_source": "gemini_3.6_flash",
+      "claimed_generator": "gemini_3.6_flash",
+      "status": "reported_not_independently_verified",
+      "generation_prompt": null,
+      "generation_parameters": null,
+      "label_review_status": "pending_human_review",
+      "added_to_repository_audit": "2026-09-14",
+      "sha256": "555a4b16398588118b5b446291c369f274490530da91b9faa2a9d9de2e95dff0"
+    },
+    "gpt-oss-20b/gpt-oss-20b_part1.txt": {
+      "sha256": "f4dfe0ffb212163df4d8ee9f96ad465a5ac62ef54a1874b9ef6b97413fb7128b",
+      "analysis_source": "gpt-oss-20b",
+      "claimed_generator": "gpt-oss-20b",
+      "status": "reported_not_independently_verified",
+      "generation_prompt": null,
+      "generation_parameters": null,
+      "label_review_status": "pending_human_review"
+    },
+    "gpt_5.1/gpt_5.1_part1.txt": {
+      "sha256": "637ff9d26d7545ca963854c1c7e64cff4be6f11961fffd5c4cbc8c0b6c99e951",
+      "analysis_source": "gpt_5.1",
+      "claimed_generator": "gpt_5.1",
+      "status": "reported_not_independently_verified",
+      "generation_prompt": null,
+      "generation_parameters": null,
+      "label_review_status": "pending_human_review"
+    },
+    "gpt_5.1/gpt_5.2_part2.txt": {
+      "sha256": "8fa76c7b370ee2addb614fed7b1990dba2d5a41d3f1b128fce52a5fc08ad1d30",
+      "analysis_source": "gpt_version_unverified",
+      "claimed_generator": null,
+      "status": "unverified_filename_conflict",
+      "generation_prompt": null,
+      "generation_parameters": null,
+      "label_review_status": "pending_human_review"
+    },
+    "gpt_5.6/gpt_5.6_part1.txt": {
+      "analysis_source": "gpt_5.6",
+      "claimed_generator": "gpt_5.6",
+      "status": "reported_not_independently_verified",
+      "generation_prompt": null,
+      "generation_parameters": null,
+      "label_review_status": "pending_human_review",
+      "added_to_repository_audit": "2026-09-14",
+      "sha256": "01ac76907bc78e62d6f6f72fcb181908ec64f457c0ba888a5b310ff9fd017d34"
+    },
+    "grok_4.1/grok_4.1_part1.txt": {
+      "sha256": "5c02113b1dabb3dff06c017f4ba26a4588571848b179f26fe944bb7504fdabea",
+      "analysis_source": "grok_4.1",
+      "claimed_generator": "grok_4.1",
+      "status": "reported_not_independently_verified",
+      "generation_prompt": null,
+      "generation_parameters": null,
+      "label_review_status": "pending_human_review"
+    },
+    "grok_4.1/grok_4.1_part2.txt": {
+      "sha256": "4d176b7d017a101323012f6f836fc2378e8d08d5ccfee1253479fbc66187228f",
+      "analysis_source": "grok_4.1",
+      "claimed_generator": "grok_4.1",
+      "status": "reported_not_independently_verified",
+      "generation_prompt": null,
+      "generation_parameters": null,
+      "label_review_status": "pending_human_review"
+    },
+    "grok_4.1/grok_4.1_part3.txt": {
+      "analysis_source": "grok_4.1",
+      "claimed_generator": "grok_4.1",
+      "status": "reported_not_independently_verified",
+      "generation_prompt": null,
+      "generation_parameters": null,
+      "label_review_status": "pending_human_review",
+      "added_to_repository_audit": "2026-09-14",
+      "sha256": "11bc87b50e5e900f978e5128d7116610fc080c1d1c603290b1ba3e25dfea9231"
+    },
+    "qwen-3.8-27b/qwen-3.8-27b_part1.txt": {
+      "analysis_source": "qwen-3.8-27b",
+      "claimed_generator": "qwen-3.8-27b",
+      "status": "reported_not_independently_verified",
+      "generation_prompt": null,
+      "generation_parameters": null,
+      "label_review_status": "pending_human_review",
+      "added_to_repository_audit": "2026-09-14",
+      "sha256": "d8d5740ceb03ba8b2d1f78b512e0db59e9ff3d28d4b7a9ebeb24339b2b688dec"
+    }
+  },
+  "removed_files": {
+    "gemini_3/gemini_3_part3.txt": {
+      "sha256": "bed4223f79c31c0061b80a5c2284a125f68e964980e21905df9972e20e031a1d",
+      "analysis_source": "gemini_3",
+      "claimed_generator": "gemini_3",
+      "status": "reported_not_independently_verified",
+      "generation_prompt": null,
+      "generation_parameters": null,
+      "label_review_status": "pending_human_review"
+    }
+  }
+}
