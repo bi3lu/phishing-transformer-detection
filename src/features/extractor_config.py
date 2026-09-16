@@ -31,6 +31,7 @@ VERIFICATION_KEYWORD: List[str] = ["potwierdź", "kod", "pin", "hasło", "tożsa
 """"""
 
 LEGIT_DOMAINS: Set[str] = {
+    "paypal.com",
     "mbank.pl",
     "pkobp.pl",
     "ing.pl",
