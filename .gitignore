@@ -1,4 +1,5 @@
 # Byte-compiled / optimized / DLL files
+.DS_Store
 __pycache__/
 *.py[codz]
 *$py.class
@@ -213,3 +214,6 @@ data/split/
 # MlFlow
 mlflow.db
 mlruns/
+# Versioned generated dataset and local distributable archives
+data/v2/
+data/releases/
