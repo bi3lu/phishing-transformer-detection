@@ -8,6 +8,8 @@ from typing import Tuple
 import pandas as pd
 
 from src.config import LABEL_COL, SPLIT_DATA_DIR, TEXT_COL
+from src.data.schema import validate_records
+from src.models.provenance import current_split_manifest
 
 
 def load_split(name: str) -> pd.DataFrame:
@@ -25,12 +27,18 @@ def load_split(name: str) -> pd.DataFrame:
     Raises:
         FileNotFoundError: If the expected CSV file does not exist.
     """
+    if name not in {"train", "val", "test"}:
+        raise ValueError(f"Unknown split: {name}")
+
+    current_split_manifest(verify_splits=(name,))
     path = SPLIT_DATA_DIR / f"{name}.csv"
 
     if not path.exists():
         raise FileNotFoundError(f"Missing split file: {path}")
 
-    return pd.read_csv(path)
+    frame = pd.read_csv(path, keep_default_na=False)
+    validate_records(frame)
+    return frame
 
 
 def prepare_xy(df: pd.DataFrame) -> Tuple[pd.Series, pd.Series]:
@@ -49,6 +57,10 @@ def prepare_xy(df: pd.DataFrame) -> Tuple[pd.Series, pd.Series]:
             - y: pandas Series of integer labels (0 or 1).
     """
     X = df[TEXT_COL].astype(str)
-    y = df[LABEL_COL].map({False: 0, True: 1}).astype(int)
+
+    if not df[LABEL_COL].isin([0, 1, False, True]).all():
+        raise ValueError("Labels must be binary")
+
+    y = df[LABEL_COL].astype(int)
 
     return X, y
